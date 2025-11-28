@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { User, UserRole, Student, Notification } from './types';
 import { api } from './services/storage';
@@ -191,6 +192,18 @@ const NotificationList = ({ onBack }: { onBack: () => void }) => {
             </div>
           )}
           <p className="text-gray-800 whitespace-pre-wrap font-bengali text-lg leading-relaxed">{n.text}</p>
+          {n.pdfUrl && (
+            <div className="mt-3">
+              <a 
+                href={n.pdfUrl} 
+                download={n.pdfName || "document.pdf"}
+                className="flex items-center gap-2 text-emerald-600 bg-emerald-50 p-2 rounded hover:bg-emerald-100 transition-colors"
+              >
+                <FileText size={16} />
+                <span className="text-sm font-semibold">Download PDF: {n.pdfName}</span>
+              </a>
+            </div>
+          )}
           <p className="text-xs text-emerald-600 mt-3 font-medium">{n.date}</p>
         </Card>
       ))}

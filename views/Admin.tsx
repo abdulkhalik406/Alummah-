@@ -1,8 +1,9 @@
+
 import React, { useState, useEffect } from 'react';
 import { Student, Notification, StudentResult, SubjectConfig } from '../types';
 import { api, calculateGradeInfo } from '../services/storage';
 import { Button, Input, Card } from '../components/UI';
-import { Plus, Trash2, UserPlus, Users, X, BookOpen, Bell, ArrowUp, ArrowDown, CheckSquare, Square } from 'lucide-react';
+import { Plus, Trash2, UserPlus, Users, X, BookOpen, Bell, ArrowUp, ArrowDown, CheckSquare, Square, FileText } from 'lucide-react';
 
 // --- CONFIG ---
 const AVAILABLE_CLASSES = ['Class I', 'Class II', 'Class III', 'Class IV', 'Class V'];
@@ -111,7 +112,7 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
   };
 
   // --- Notification Logic ---
-  const [newNotif, setNewNotif] = useState({ text: '', imageUrl: '' });
+  const [newNotif, setNewNotif] = useState<{ text: string, imageUrl: string, pdfUrl?: string, pdfName?: string }>({ text: '', imageUrl: '' });
   const [imagePreview, setImagePreview] = useState<string | null>(null);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -122,6 +123,26 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
         const result = reader.result as string;
         setNewNotif({ ...newNotif, imageUrl: result });
         setImagePreview(result);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handlePdfUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 500 * 1024) { // 500KB limit
+        alert("File too large. Please upload PDF smaller than 500KB.");
+        e.target.value = '';
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setNewNotif({ 
+          ...newNotif, 
+          pdfUrl: reader.result as string, 
+          pdfName: file.name 
+        });
       };
       reader.readAsDataURL(file);
     }
@@ -514,6 +535,22 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
                 )}
               </div>
 
+              {/* PDF Upload */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Attach PDF</label>
+                <input 
+                  type="file" 
+                  accept="application/pdf"
+                  onChange={handlePdfUpload}
+                  className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100"
+                />
+                {newNotif.pdfName && (
+                  <div className="mt-2 text-sm text-emerald-600 flex items-center gap-2">
+                    <FileText size={16}/> {newNotif.pdfName}
+                  </div>
+                )}
+              </div>
+
               <Button onClick={handleAddNotif} fullWidth>Publish</Button>
             </Card>
 
@@ -522,6 +559,11 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
                  <Card key={n.id} className="relative group">
                    {n.imageUrl && <img src={n.imageUrl} alt="notice" className="w-full h-32 object-cover rounded mb-2" />}
                    <p className="text-gray-800 whitespace-pre-wrap font-bengali">{n.text}</p>
+                   {n.pdfUrl && (
+                      <div className="mt-2 text-xs text-emerald-600 border border-emerald-100 bg-emerald-50 p-2 rounded">
+                        PDF Attached: {n.pdfName}
+                      </div>
+                   )}
                    <p className="text-xs text-gray-400 mt-2">{n.date}</p>
                    <button onClick={() => n.id && handleDeleteNotif(n.id)} className="absolute top-2 right-2 text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={16}/></button>
                  </Card>
