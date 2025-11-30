@@ -188,6 +188,7 @@ export const Marksheet: React.FC<{ student: Student, onBack: () => void }> = ({ 
           <div className="flex justify-between items-start pt-4 mb-20">
              <div className="space-y-1">
                <p className="text-lg"><span className="font-bold text-gray-700">Rank in Class:</span> <span className="text-emerald-700 font-bold">#{rank || '-'}</span></p>
+               <p className="text-lg"><span className="font-bold text-gray-700">Percentage:</span> {result.percentage}%</p>
                <p className="text-lg"><span className="font-bold text-gray-700">Overall Grade:</span> {result.overallGrade}</p>
                <p className="text-lg"><span className="font-bold text-gray-700">Performance Level:</span> {getOverallPL(result.overallGrade)}</p>
              </div>

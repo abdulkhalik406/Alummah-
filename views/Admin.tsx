@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { Student, Notification, StudentResult, SubjectConfig, AVAILABLE_CLASSES, FeeStructure, MONTHS } from '../types';
-import { api } from '../services/storage';
+import { api, calculateGradeInfo } from '../services/storage';
 import { Button, Input, Card } from '../components/UI';
-import { Plus, Trash2, UserPlus, Users, X, BookOpen, Bell, ArrowUp, ArrowDown, CheckSquare, Square, FileText, Calendar, IndianRupee } from 'lucide-react';
+import { Plus, Trash2, UserPlus, Users, X, BookOpen, Bell, ArrowUp, ArrowDown, CheckSquare, Square, FileText, Calendar, IndianRupee, Edit, CheckCircle } from 'lucide-react';
 
 // --- CONFIG ---
 
@@ -214,6 +214,91 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
     alert('Results Saved!');
   };
 
+  // --- Result Logic (Individual Edit) ---
+  const [indResClass, setIndResClass] = useState('');
+  const [indResExam, setIndResExam] = useState('Annual 2024');
+  const [indResStudentId, setIndResStudentId] = useState('');
+  const [indResStudents, setIndResStudents] = useState<Student[]>([]);
+  const [indResMarks, setIndResMarks] = useState<Record<string, number>>({});
+  const [isIndResLoaded, setIsIndResLoaded] = useState(false);
+
+  // Load students dropdown when class changes
+  const handleIndResClassChange = async (cls: string) => {
+    setIndResClass(cls);
+    setIndResStudents(await api.getStudentsByClass(cls));
+    setIndResStudentId('');
+    setIsIndResLoaded(false);
+  };
+
+  const loadIndividualResult = async () => {
+    if (!indResStudentId || !indResExam) return;
+    
+    // Get student details to find Enrolled Subjects
+    const student = indResStudents.find(s => s.contact === indResStudentId);
+    if (!student) return;
+
+    const enrolledSubjects = student.subjects && student.subjects.length > 0 
+      ? student.subjects 
+      : subjects.map(s => s.name); // Fallback to all if none specified
+
+    // Fetch existing results
+    const allResults = await api.getResults(indResStudentId);
+    const existingResult = allResults.find(r => r.examName === indResExam);
+
+    // Pre-fill
+    const marks: Record<string, number> = {};
+    enrolledSubjects.forEach(subName => {
+      marks[subName] = existingResult?.marks[subName] || 0;
+    });
+
+    setIndResMarks(marks);
+    setIsIndResLoaded(true);
+  };
+
+  const saveIndividualResult = async () => {
+    if (!indResStudentId || !indResExam) return;
+
+    const student = indResStudents.find(s => s.contact === indResStudentId);
+    if (!student) return;
+
+    let totalObtained = 0;
+    let maxTotal = 0;
+    let isPass = true;
+
+    // Iterate over the marks we are editing
+    Object.entries(indResMarks).forEach(([subName, mark]) => {
+      const score = Number(mark);
+      totalObtained += score;
+      const subCfg = subjects.find(s => s.name === subName);
+      if (subCfg) {
+        maxTotal += subCfg.maxMarks;
+      } else {
+        maxTotal += 100; // default fallback
+      }
+      
+      if (score < 35) isPass = false;
+    });
+
+    const percentage = maxTotal > 0 ? (totalObtained / maxTotal) * 100 : 0;
+    const { grade } = calculateGradeInfo(percentage);
+
+    const resultData: Omit<StudentResult, 'id'> = {
+      studentId: indResStudentId,
+      examName: indResExam,
+      marks: indResMarks,
+      totalMarks: totalObtained,
+      maxTotalMarks: maxTotal,
+      percentage: parseFloat(percentage.toFixed(2)),
+      overallGrade: grade,
+      isPass
+    };
+
+    await api.saveResult(resultData);
+    alert("Individual Result Updated Successfully!");
+    setIsIndResLoaded(false);
+    setIndResMarks({});
+  };
+
   // --- Attendance Management (Bulk) ---
   const [attClass, setAttClass] = useState('');
   const [attDate, setAttDate] = useState(new Date().toISOString().split('T')[0]);
@@ -263,7 +348,13 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
   const [feeStudents, setFeeStudents] = useState<Student[]>([]);
   const [selectedFeeStudent, setSelectedFeeStudent] = useState<string | null>(null);
   const [studentFeeRecord, setStudentFeeRecord] = useState<Record<string, boolean>>({}); // Month -> Paid
-  const currentYear = new Date().getFullYear().toString();
+  
+  // Year Selection State: Range 2025 - 2050
+  const feeYears = Array.from({ length: 2050 - 2025 + 1 }, (_, i) => String(2025 + i));
+  const [feeYear, setFeeYear] = useState(() => {
+     const curr = new Date().getFullYear();
+     return (curr >= 2025 && curr <= 2050) ? String(curr) : '2025';
+  });
 
   useEffect(() => {
     if (activeTab === 'fees') {
@@ -284,7 +375,7 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
 
   const openStudentFeeCard = async (studentId: string) => {
     setSelectedFeeStudent(studentId);
-    const record = await api.getStudentFeeRecord(studentId, currentYear);
+    const record = await api.getStudentFeeRecord(studentId, feeYear);
     setStudentFeeRecord(record.payments);
   };
 
@@ -295,7 +386,7 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
     
     await api.updateStudentFee({
       studentId: selectedFeeStudent,
-      year: currentYear,
+      year: feeYear,
       payments: newRecord
     });
   };
@@ -416,6 +507,20 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
         {/* --- FEES TAB --- */}
         {activeTab === 'fees' && (
           <div className="space-y-6">
+            <div className="flex items-center justify-between mb-2">
+               <h3 className="font-bold text-emerald-900">Fees Management</h3>
+               <select 
+                 className="bg-white border rounded px-3 py-1 text-sm font-bold text-emerald-700 outline-none"
+                 value={feeYear}
+                 onChange={(e) => {
+                    setFeeYear(e.target.value);
+                    setSelectedFeeStudent(null); 
+                 }}
+               >
+                 {feeYears.map(y => <option key={y} value={y}>{y}</option>)}
+               </select>
+            </div>
+
             {/* Fee Config Section */}
             <Card>
               <h3 className="font-bold mb-4 text-emerald-800 flex items-center gap-2"><IndianRupee size={20}/> Monthly Fee Structure</h3>
@@ -437,7 +542,7 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
 
             {/* Fee Payment Section */}
             <div className="space-y-4">
-              <h3 className="font-bold text-gray-700">Student Fee Records ({currentYear})</h3>
+              <h3 className="font-bold text-gray-700">Student Fee Records ({feeYear})</h3>
               
               {!feeClass ? (
                  <div className="grid gap-2">
@@ -560,9 +665,73 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
 
         {/* --- RESULTS TAB --- */}
         {activeTab === 'results' && (
-          <div className="space-y-6">
+          <div className="space-y-8">
+            {/* INDIVIDUAL EDIT CARD */}
+             <Card className="border-t-4 border-t-amber-500">
+                <h3 className="font-bold text-lg mb-4 text-amber-800 flex items-center gap-2"><Edit size={18}/> Individual Result Management</h3>
+                
+                {!isIndResLoaded ? (
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-xs font-bold text-gray-500 uppercase">1. Class</label>
+                      <select className="w-full p-2 border rounded" value={indResClass} onChange={e => handleIndResClassChange(e.target.value)}>
+                        <option value="">Select Class</option>
+                        {AVAILABLE_CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold text-gray-500 uppercase">2. Student</label>
+                      <select className="w-full p-2 border rounded" value={indResStudentId} onChange={e => setIndResStudentId(e.target.value)}>
+                        <option value="">Select Student</option>
+                        {indResStudents.map(s => <option key={s.contact} value={s.contact}>{s.name} ({s.rollNumber})</option>)}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold text-gray-500 uppercase">3. Exam Name</label>
+                      <input 
+                        className="w-full p-2 border rounded" 
+                        value={indResExam} 
+                        onChange={e => setIndResExam(e.target.value)} 
+                        placeholder="e.g. Annual 2024"
+                      />
+                    </div>
+
+                    <Button onClick={loadIndividualResult} disabled={!indResStudentId || !indResExam} variant="secondary" fullWidth>Load / Create Result</Button>
+                  </div>
+                ) : (
+                  <div className="animate-in fade-in">
+                    <div className="flex justify-between items-center mb-4 border-b pb-2">
+                       <div>
+                         <p className="font-bold text-gray-800">{indResStudents.find(s=>s.contact===indResStudentId)?.name}</p>
+                         <p className="text-xs text-gray-500">{indResExam}</p>
+                       </div>
+                       <button onClick={() => setIsIndResLoaded(false)} className="text-xs text-red-500 underline">Cancel</button>
+                    </div>
+                    
+                    <div className="space-y-3 mb-4">
+                      {Object.keys(indResMarks).map(sub => (
+                        <div key={sub} className="flex justify-between items-center">
+                          <span className="font-medium text-sm">{sub}</span>
+                          <input 
+                            type="number" 
+                            className="w-24 p-2 border rounded text-center font-bold"
+                            value={indResMarks[sub]}
+                            onChange={(e) => setIndResMarks({...indResMarks, [sub]: parseInt(e.target.value) || 0})}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                    
+                    <Button onClick={saveIndividualResult} fullWidth>Save & Calculate Result</Button>
+                  </div>
+                )}
+             </Card>
+
+            {/* BULK ENTRY CARD */}
              <Card>
-               <h3 className="font-bold mb-4">Bulk Marks Entry</h3>
+               <h3 className="font-bold mb-4 text-emerald-800 flex items-center gap-2"><Users size={18}/> Bulk Marks Entry (Single Subject)</h3>
                <div className="space-y-3">
                  <div>
                    <label className="text-xs font-bold text-gray-500 uppercase">Class</label>
@@ -726,4 +895,3 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
     </div>
   );
 };
-import { CheckCircle } from 'lucide-react';
