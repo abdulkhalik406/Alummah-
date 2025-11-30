@@ -366,7 +366,8 @@ export const api = {
     const data = {
       totalClasses: record.totalClasses,
       presentDays: record.presentDays,
-      lastUpdated: new Date().toISOString().split('T')[0]
+      lastUpdated: new Date().toISOString().split('T')[0],
+      history: record.history || {}
     };
 
     if (db) {
@@ -405,7 +406,8 @@ export const api = {
       const newRecord: AttendanceRecord = {
         studentId: student.contact,
         totalClasses: currentTotal + 1,
-        presentDays: isPresent ? currentPresent + 1 : currentPresent
+        presentDays: isPresent ? currentPresent + 1 : currentPresent,
+        history: record?.history || {}
       };
 
       // Save

@@ -1,9 +1,9 @@
 
 import React, { useEffect, useState } from 'react';
-import { StudentResult, AttendanceRecord, Student, SubjectConfig } from '../types';
+import { StudentResult, AttendanceRecord, Student, SubjectConfig, FeeStructure, FeePaymentRecord, MONTHS } from '../types';
 import { api, calculateGradeInfo } from '../services/storage';
 import { Button, Card } from '../components/UI';
-import { Download, CheckCircle, XCircle } from 'lucide-react';
+import { Download, CheckCircle, XCircle, ChevronLeft, ChevronRight, IndianRupee } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 
 export const Marksheet: React.FC<{ student: Student, onBack: () => void }> = ({ student, onBack }) => {
@@ -79,6 +79,14 @@ export const Marksheet: React.FC<{ student: Student, onBack: () => void }> = ({ 
     }
   };
 
+  const getOverallPL = (grade: string = '') => {
+    const g = grade.toUpperCase();
+    if (g === 'A+' || g === 'A') return 'OPL (Outstanding Performance Level)';
+    if (g === 'B+' || g === 'B') return 'APL (Achieved Performance Level)';
+    if (g === 'C+' || g === 'C') return 'MPL (Minimum Performance Level)';
+    return 'BPL (Below Performance Level)';
+  };
+
   if (loading) return <div className="p-10 text-center">Loading...</div>;
 
   if (availableExams.length === 0) {
@@ -149,9 +157,6 @@ export const Marksheet: React.FC<{ student: Student, onBack: () => void }> = ({ 
             </thead>
             <tbody>
               {subjects.map((sub, idx) => {
-                // Only show subjects relevant to student? 
-                // Currently showing all, or filtering if student has specific subjects? 
-                // Legacy: if student.subjects exists, filter. 
                 if (student.subjects && student.subjects.length > 0 && !student.subjects.includes(sub.name)) {
                    return null;
                 }
@@ -184,6 +189,7 @@ export const Marksheet: React.FC<{ student: Student, onBack: () => void }> = ({ 
              <div className="space-y-1">
                <p className="text-lg"><span className="font-bold text-gray-700">Rank in Class:</span> <span className="text-emerald-700 font-bold">#{rank || '-'}</span></p>
                <p className="text-lg"><span className="font-bold text-gray-700">Overall Grade:</span> {result.overallGrade}</p>
+               <p className="text-lg"><span className="font-bold text-gray-700">Performance Level:</span> {getOverallPL(result.overallGrade)}</p>
              </div>
           </div>
 
@@ -208,6 +214,75 @@ export const Marksheet: React.FC<{ student: Student, onBack: () => void }> = ({ 
   );
 };
 
+// --- ATTENDANCE CALENDAR COMPONENT ---
+
+const AttendanceCalendar: React.FC<{ record: AttendanceRecord | null }> = ({ record }) => {
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+
+  const getDaysInMonth = (date: Date) => {
+    const year = date.getFullYear();
+    const month = date.getMonth();
+    return new Date(year, month + 1, 0).getDate();
+  };
+
+  const getFirstDayOfMonth = (date: Date) => {
+    return new Date(date.getFullYear(), date.getMonth(), 1).getDay();
+  };
+
+  const changeMonth = (delta: number) => {
+    const newDate = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + delta, 1);
+    setCurrentMonth(newDate);
+  };
+
+  const daysInMonth = getDaysInMonth(currentMonth);
+  const firstDay = getFirstDayOfMonth(currentMonth);
+  const monthName = currentMonth.toLocaleString('default', { month: 'long', year: 'numeric' });
+
+  // Render Grid
+  const days = [];
+  // Empty slots for start of month
+  for (let i = 0; i < firstDay; i++) {
+    days.push(<div key={`empty-${i}`} className="h-10"></div>);
+  }
+
+  // Days
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const status = record?.history ? record.history[dateStr] : null;
+
+    let bgColor = 'bg-gray-100 text-gray-400';
+    if (status === 'present') bgColor = 'bg-emerald-500 text-white font-bold shadow-sm';
+    if (status === 'absent') bgColor = 'bg-red-500 text-white font-bold shadow-sm';
+
+    days.push(
+      <div key={d} className={`h-10 rounded-lg flex items-center justify-center text-sm ${bgColor}`}>
+        {d}
+      </div>
+    );
+  }
+
+  return (
+    <Card className="p-4 bg-white">
+      <div className="flex justify-between items-center mb-4">
+        <button onClick={() => changeMonth(-1)} className="p-1 hover:bg-gray-100 rounded-full"><ChevronLeft /></button>
+        <span className="font-bold text-lg text-gray-700">{monthName}</span>
+        <button onClick={() => changeMonth(1)} className="p-1 hover:bg-gray-100 rounded-full"><ChevronRight /></button>
+      </div>
+      <div className="grid grid-cols-7 gap-2 mb-2 text-center text-xs font-bold text-gray-500">
+        <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
+      </div>
+      <div className="grid grid-cols-7 gap-2">
+        {days}
+      </div>
+      <div className="flex justify-center gap-4 mt-4 text-xs">
+        <div className="flex items-center gap-1"><div className="w-3 h-3 bg-emerald-500 rounded"></div>Present</div>
+        <div className="flex items-center gap-1"><div className="w-3 h-3 bg-red-500 rounded"></div>Absent</div>
+        <div className="flex items-center gap-1"><div className="w-3 h-3 bg-gray-100 rounded"></div>No Class</div>
+      </div>
+    </Card>
+  );
+};
+
 export const AttendanceView: React.FC<{ student: Student, onBack: () => void }> = ({ student, onBack }) => {
   const [record, setRecord] = useState<AttendanceRecord | null>(null);
   
@@ -229,35 +304,12 @@ export const AttendanceView: React.FC<{ student: Student, onBack: () => void }> 
         </Card>
       ) : (
         <>
-          <Card className="text-center py-8 bg-white border border-emerald-100 shadow-md">
-            <div className="relative w-40 h-40 mx-auto mb-6 flex items-center justify-center">
-               <svg className="w-full h-full transform -rotate-90 drop-shadow-md">
-                 <circle cx="80" cy="80" r="70" stroke="#f3f4f6" strokeWidth="12" fill="none" />
-                 <circle 
-                  cx="80" cy="80" r="70" 
-                  stroke="#10b981" 
-                  strokeWidth="12" 
-                  strokeLinecap="round"
-                  fill="none" 
-                  strokeDasharray={440}
-                  strokeDashoffset={440 - (440 * (record.presentDays / record.totalClasses))}
-                  className="transition-all duration-1000 ease-out"
-                 />
-               </svg>
-               <div className="absolute flex flex-col items-center">
-                 <span className="text-4xl font-bold text-gray-800">
-                   {Math.round((record.presentDays / record.totalClasses) * 100)}%
-                 </span>
-               </div>
-            </div>
-          </Card>
-
           <div className="grid grid-cols-2 gap-4">
             <Card className="bg-emerald-50 border-emerald-200">
                <div className="flex flex-col items-center text-emerald-800">
                   <span className="text-3xl font-bold mb-1">{record.presentDays}</span>
-                  <span className="text-sm font-bengali">উপস্থিত দিন</span>
-                  <span className="text-xs opacity-60">Present</span>
+                  <span className="text-sm font-bengali">মোট উপস্থিত</span>
+                  <span className="text-xs opacity-60">Total Present</span>
                </div>
             </Card>
             <Card className="bg-white border-gray-200">
@@ -268,8 +320,91 @@ export const AttendanceView: React.FC<{ student: Student, onBack: () => void }> 
                </div>
             </Card>
           </div>
+
+          <AttendanceCalendar record={record} />
+
+          <Card className="text-center py-4 bg-white border border-emerald-100 shadow-md">
+            <p className="text-sm text-gray-500 mb-2">Overall Attendance</p>
+            <div className="relative w-32 h-32 mx-auto flex items-center justify-center">
+               <svg className="w-full h-full transform -rotate-90 drop-shadow-md">
+                 <circle cx="64" cy="64" r="56" stroke="#f3f4f6" strokeWidth="10" fill="none" />
+                 <circle 
+                  cx="64" cy="64" r="56" 
+                  stroke="#10b981" 
+                  strokeWidth="10" 
+                  strokeLinecap="round"
+                  fill="none" 
+                  strokeDasharray={351}
+                  strokeDashoffset={351 - (351 * (record.presentDays / (record.totalClasses || 1)))}
+                  className="transition-all duration-1000 ease-out"
+                 />
+               </svg>
+               <div className="absolute flex flex-col items-center">
+                 <span className="text-3xl font-bold text-gray-800">
+                   {Math.round((record.presentDays / (record.totalClasses || 1)) * 100)}%
+                 </span>
+               </div>
+            </div>
+          </Card>
         </>
       )}
     </div>
   )
 }
+
+export const FeeStatusView: React.FC<{ student: Student, onBack: () => void }> = ({ student, onBack }) => {
+  const [feeConfig, setFeeConfig] = useState<FeeStructure>({});
+  const [feeRecord, setFeeRecord] = useState<FeePaymentRecord | null>(null);
+  const currentYear = new Date().getFullYear().toString();
+
+  useEffect(() => {
+    const load = async () => {
+      setFeeConfig(await api.getFeeStructure());
+      setFeeRecord(await api.getStudentFeeRecord(student.contact, currentYear));
+    };
+    load();
+  }, [student]);
+
+  const monthlyFee = student.class ? (feeConfig[student.class] || 0) : 0;
+
+  return (
+    <div className="p-4 space-y-6 bg-gray-50 min-h-screen">
+      <div className="flex items-center gap-4 mb-4">
+        <Button onClick={onBack} variant="outline" className="px-3 py-1 text-sm">Back</Button>
+        <h2 className="text-xl font-bold font-bengali">বেতন এবং ফি (Fees)</h2>
+      </div>
+
+      <Card className="bg-emerald-800 text-white shadow-xl">
+        <div className="flex justify-between items-center">
+           <div>
+              <p className="text-emerald-200 text-xs uppercase font-bold tracking-wider">Monthly Fee</p>
+              <h3 className="text-3xl font-bold flex items-center"><IndianRupee size={24}/> {monthlyFee}</h3>
+           </div>
+           <div className="text-right">
+              <p className="text-emerald-200 text-xs uppercase font-bold tracking-wider">Session</p>
+              <h3 className="text-xl font-bold">{currentYear}</h3>
+           </div>
+        </div>
+      </Card>
+
+      <div className="grid gap-3">
+         {MONTHS.map(month => {
+           const isPaid = feeRecord?.payments[month] || false;
+           return (
+             <Card key={month} className={`flex justify-between items-center p-4 border-l-4 ${isPaid ? 'border-l-emerald-500 bg-white' : 'border-l-red-400 bg-red-50'}`}>
+                <div className="flex items-center gap-3">
+                   <div className={`p-2 rounded-full ${isPaid ? 'bg-emerald-100 text-emerald-600' : 'bg-red-100 text-red-500'}`}>
+                     {isPaid ? <CheckCircle size={20}/> : <XCircle size={20}/>}
+                   </div>
+                   <span className="font-bold text-gray-700">{month}</span>
+                </div>
+                <div className={`text-sm font-bold px-3 py-1 rounded-full ${isPaid ? 'bg-emerald-100 text-emerald-800' : 'bg-white text-red-500 border border-red-200'}`}>
+                  {isPaid ? 'PAID' : 'DUE'}
+                </div>
+             </Card>
+           )
+         })}
+      </div>
+    </div>
+  );
+};

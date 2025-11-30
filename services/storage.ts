@@ -4,7 +4,7 @@ import {
   getFirestore, collection, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, 
   query, where, getDocs, orderBy, onSnapshot, serverTimestamp, Firestore 
 } from "firebase/firestore";
-import { User, UserRole, Student, Notification, StudentResult, AttendanceRecord, SubjectConfig, ADMIN_CONTACTS } from '../types';
+import { User, UserRole, Student, Notification, StudentResult, AttendanceRecord, SubjectConfig, ADMIN_CONTACTS, FeeStructure, FeePaymentRecord } from '../types';
 
 // --- CONFIG & INIT ---
 
@@ -24,7 +24,8 @@ const paths = {
   notifications: `${BASE_PATH}/notifications`,
   results: `${BASE_PATH}/results`,
   attendance: `${BASE_PATH}/attendance`,
-  config: `${BASE_PATH}/config`
+  config: `${BASE_PATH}/config`,
+  fees: `${BASE_PATH}/fees`
 };
 
 // Initialize Firestore ONLY if config exists to avoid "demo-project" connection errors
@@ -100,6 +101,8 @@ const LS = {
   notifs: () => LS.get('maktab_notifications') as Notification[],
   subjects: () => LS.get('maktab_subjects') as SubjectConfig[],
   attendance: () => LS.get('maktab_attendance') as AttendanceRecord[],
+  feeStructure: () => LS.get('maktab_fee_config') as FeeStructure,
+  feeRecords: () => LS.get('maktab_fee_records') as FeePaymentRecord[],
 };
 
 // --- API SERVICE ---
@@ -226,13 +229,10 @@ export const api = {
   },
 
   bulkUpdateMarks: async (className: string, examName: string, subjectName: string, maxMarks: number, updates: { studentId: string, marks: number }[]) => {
-    // This function fetches existing results for each student and updates just one subject
     for (const update of updates) {
-      // Get existing or create new
       let result: StudentResult | undefined;
       let docId = `${update.studentId}_${examName.replace(/\s+/g, '_')}`;
 
-      // Helper to fetch single result logic agnostic of DB
       if (db) {
         const snap = await getDoc(doc(db, paths.results, docId));
         if (snap.exists()) result = { ...snap.data(), id: snap.id } as StudentResult;
@@ -243,13 +243,7 @@ export const api = {
       const marksMap = result ? { ...result.marks } : {};
       marksMap[subjectName] = update.marks;
 
-      // Recalculate Totals (Roughly, assuming other marks exist)
       let totalObt = 0;
-      // Note: This basic calc only sums what is currently in the map. 
-      // Ideally we need the full subject config to know max marks, but we pass maxMarks for *this* subject.
-      // We will approximate MaxTotalMarks by summing known subject maxes if possible, 
-      // or just leave it for the detailed save. For now, we just save the data point.
-      
       Object.values(marksMap).forEach((m: any) => totalObt += m);
 
       const newResult: StudentResult = {
@@ -257,7 +251,7 @@ export const api = {
           studentId: update.studentId,
           examName,
           totalMarks: 0,
-          maxTotalMarks: 0, // Will be inaccurate until full save, but holds data
+          maxTotalMarks: 0,
           percentage: 0,
           isPass: false,
           marks: {}
@@ -363,11 +357,21 @@ export const api = {
     return null;
   },
 
+  getAttendanceForClass: async (studentIds: string[]): Promise<AttendanceRecord[]> => {
+     const records: AttendanceRecord[] = [];
+     for (const id of studentIds) {
+       const rec = await api.getAttendance(id);
+       if (rec) records.push(rec);
+     }
+     return records;
+  },
+
   updateAttendance: async (record: AttendanceRecord) => {
     const data = {
       totalClasses: record.totalClasses,
       presentDays: record.presentDays,
-      lastUpdated: new Date().toISOString().split('T')[0]
+      lastUpdated: new Date().toISOString().split('T')[0],
+      history: record.history || {}
     };
 
     if (db) {
@@ -382,16 +386,10 @@ export const api = {
     }
   },
 
-  bulkUpdateAttendance: async (classStudents: Student[], tickedStudentIds: string[]) => {
-    // 1. Fetch current attendance for all students in class
-    // 2. Increment total for ALL
-    // 3. Increment present for TICKED
-    
-    // We process sequentially or parallel
+  bulkUpdateAttendance: async (classStudents: Student[], tickedStudentIds: string[], date: string) => {
     for (const student of classStudents) {
       let record: AttendanceRecord | null = null;
       
-      // Get existing
       if (db) {
         const snap = await getDoc(doc(db, paths.attendance, student.contact));
         if (snap.exists()) record = snap.data() as AttendanceRecord;
@@ -399,17 +397,23 @@ export const api = {
         record = LS.attendance().find(a => a.studentId === student.contact) || null;
       }
 
-      const currentTotal = record?.totalClasses || 0;
-      const currentPresent = record?.presentDays || 0;
+      const history = record?.history || {};
       const isPresent = tickedStudentIds.includes(student.contact);
+      
+      history[date] = isPresent ? 'present' : 'absent';
+
+      const dates = Object.keys(history);
+      const total = dates.length;
+      const present = Object.values(history).filter(status => status === 'present').length;
 
       const newRecord: AttendanceRecord = {
         studentId: student.contact,
-        totalClasses: currentTotal + 1,
-        presentDays: isPresent ? currentPresent + 1 : currentPresent
+        totalClasses: total,
+        presentDays: present,
+        lastUpdated: date,
+        history: history
       };
 
-      // Save
       if (db) {
         await setDoc(doc(db, paths.attendance, student.contact), newRecord);
       } else {
@@ -419,6 +423,54 @@ export const api = {
          else list.push(newRecord);
          LS.set('maktab_attendance', list);
       }
+    }
+  },
+
+  // --- FEE MANAGEMENT ---
+  
+  getFeeStructure: async (): Promise<FeeStructure> => {
+    if (db) {
+      const snap = await getDoc(doc(db, paths.config, 'fees'));
+      if (snap.exists()) return snap.data().structure;
+    } else {
+      const stored = LS.feeStructure();
+      if (stored) return stored;
+    }
+    return {
+      'Class I': 500, 'Class II': 600, 'Class III': 700, 'Class IV': 800, 'Class V': 900
+    };
+  },
+
+  saveFeeStructure: async (structure: FeeStructure) => {
+    if (db) {
+      await setDoc(doc(db, paths.config, 'fees'), { structure });
+    } else {
+      LS.set('maktab_fee_config', structure);
+    }
+  },
+
+  getStudentFeeRecord: async (studentId: string, year: string): Promise<FeePaymentRecord> => {
+    const docId = `${studentId}_${year}`;
+    if (db) {
+      const snap = await getDoc(doc(db, paths.fees, docId));
+      if (snap.exists()) return snap.data() as FeePaymentRecord;
+    } else {
+      const rec = LS.feeRecords().find(r => r.studentId === studentId && r.year === year);
+      if (rec) return rec;
+    }
+    return { studentId, year, payments: {} };
+  },
+
+  updateStudentFee: async (record: FeePaymentRecord) => {
+    const docId = `${record.studentId}_${record.year}`;
+    if (db) {
+      await setDoc(doc(db, paths.fees, docId), record);
+    } else {
+      const list = LS.feeRecords();
+      const idx = list.findIndex(r => r.studentId === record.studentId && r.year === record.year);
+      if (idx >= 0) list[idx] = record;
+      else list.push(record);
+      LS.set('maktab_fee_records', list);
     }
   }
 };

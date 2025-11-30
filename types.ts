@@ -41,6 +41,18 @@ export interface AttendanceRecord {
   totalClasses: number;
   presentDays: number;
   lastUpdated?: string;
+  history: Record<string, 'present' | 'absent'>; // Date YYYY-MM-DD : Status
+}
+
+export interface FeeStructure {
+  // e.g. "Class I": 500
+  [className: string]: number;
+}
+
+export interface FeePaymentRecord {
+  studentId: string;
+  year: string;
+  payments: Record<string, boolean>; // "January": true (Paid)
 }
 
 export interface Notification {
@@ -62,3 +74,10 @@ export const GRADES = {
   MPL: { label: 'MPL', desc: 'Minimum Performance Level' },
   BPL: { label: 'BPL', desc: 'Below Performance Level' }
 };
+
+export const AVAILABLE_CLASSES = ['Class I', 'Class II', 'Class III', 'Class IV', 'Class V'];
+
+export const MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June', 
+  'July', 'August', 'September', 'October', 'November', 'December'
+];

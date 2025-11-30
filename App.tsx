@@ -4,7 +4,7 @@ import { User, UserRole, Student, Notification } from './types';
 import { api } from './services/storage';
 import { Card, Button, Input, MenuTile } from './components/UI';
 import { AdminDashboard } from './views/Admin';
-import { Marksheet, AttendanceView } from './views/Student';
+import { Marksheet, AttendanceView, FeeStatusView } from './views/Student';
 import { 
   Bell, 
   FileText, 
@@ -13,7 +13,8 @@ import {
   BookOpen, 
   LogOut, 
   CalendarCheck,
-  ChevronLeft
+  ChevronLeft,
+  IndianRupee
 } from 'lucide-react';
 
 // --- CONSTANTS ---
@@ -266,7 +267,7 @@ const LoginScreen = ({ onLogin, onBack }: { onLogin: (u: User) => void, onBack: 
 // --- MAIN APP COMPONENT ---
 
 enum View {
-  HOME, LOGIN, NOTIFICATIONS, RULES, ABOUT, RESULT, ATTENDANCE, ADMIN
+  HOME, LOGIN, NOTIFICATIONS, RULES, ABOUT, RESULT, ATTENDANCE, FEES, ADMIN
 }
 
 const App: React.FC = () => {
@@ -288,7 +289,8 @@ const App: React.FC = () => {
   };
 
   const navigateTo = (view: View) => {
-    if ((view === View.RESULT || view === View.ATTENDANCE) && !currentUser) {
+    // Requires Login
+    if ((view === View.RESULT || view === View.ATTENDANCE || view === View.FEES) && !currentUser) {
       alert("Please Login first to view this section.");
       setCurrentView(View.LOGIN);
       return;
@@ -307,6 +309,10 @@ const App: React.FC = () => {
   
   if (currentView === View.ATTENDANCE && currentUser?.role === UserRole.STUDENT) {
     return <AttendanceView student={currentUser as Student} onBack={() => setCurrentView(View.HOME)} />;
+  }
+
+  if (currentView === View.FEES && currentUser?.role === UserRole.STUDENT) {
+    return <FeeStatusView student={currentUser as Student} onBack={() => setCurrentView(View.HOME)} />;
   }
 
   if (currentView === View.NOTIFICATIONS) return <NotificationList onBack={() => setCurrentView(View.HOME)} />;
@@ -357,6 +363,7 @@ const App: React.FC = () => {
         <MenuTile icon={FileText} label="ফলাফল (Result)" onClick={() => navigateTo(View.RESULT)} color="text-emerald-600 bg-emerald-50" />
         <MenuTile icon={Bell} label="নোটিফিকেশন" onClick={() => navigateTo(View.NOTIFICATIONS)} color="text-amber-600 bg-amber-50" />
         <MenuTile icon={CalendarCheck} label="উপস্থিতি" onClick={() => navigateTo(View.ATTENDANCE)} color="text-blue-600 bg-blue-50" />
+        <MenuTile icon={IndianRupee} label="বেতন (Fees)" onClick={() => navigateTo(View.FEES)} color="text-rose-600 bg-rose-50" />
         <MenuTile icon={Info} label="নিয়ম ও কানুন" onClick={() => navigateTo(View.RULES)} color="text-purple-600 bg-purple-50" />
         <MenuTile icon={UserCircle} label="আমাদের সম্পর্কে" onClick={() => navigateTo(View.ABOUT)} color="text-teal-600 bg-teal-50" />
         

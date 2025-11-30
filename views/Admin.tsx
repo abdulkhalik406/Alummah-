@@ -1,18 +1,16 @@
 
 import React, { useState, useEffect } from 'react';
-import { Student, Notification, StudentResult, SubjectConfig } from '../types';
-import { api, calculateGradeInfo } from '../services/storage';
+import { Student, Notification, StudentResult, SubjectConfig, AVAILABLE_CLASSES, FeeStructure, MONTHS } from '../types';
+import { api } from '../services/storage';
 import { Button, Input, Card } from '../components/UI';
-import { Plus, Trash2, UserPlus, Users, X, BookOpen, Bell, ArrowUp, ArrowDown, CheckSquare, Square, FileText } from 'lucide-react';
+import { Plus, Trash2, UserPlus, Users, X, BookOpen, Bell, ArrowUp, ArrowDown, CheckSquare, Square, FileText, Calendar, IndianRupee } from 'lucide-react';
 
 // --- CONFIG ---
-const AVAILABLE_CLASSES = ['Class I', 'Class II', 'Class III', 'Class IV', 'Class V'];
 
 // Default subjects per class logic
 const getRecommendedSubjects = (className: string, allSubjects: SubjectConfig[]) => {
   // Logic: Everyone gets BENGALI, ARABIC, MATH.
   // Class III and above get ENGLISH.
-  // This matches the provided "Subject Management" logic requirement roughly.
   const defaults = ['BENGALI', 'ARABIC', 'MATHEMATICS'];
   if (['Class III', 'Class IV', 'Class V'].includes(className)) {
     defaults.push('ENGLISH');
@@ -21,7 +19,7 @@ const getRecommendedSubjects = (className: string, allSubjects: SubjectConfig[])
 };
 
 export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
-  const [activeTab, setActiveTab] = useState<'students' | 'results' | 'notifications' | 'subjects' | 'attendance'>('students');
+  const [activeTab, setActiveTab] = useState<'students' | 'results' | 'notifications' | 'subjects' | 'attendance' | 'fees'>('students');
   const [students, setStudents] = useState<Student[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [subjects, setSubjects] = useState<SubjectConfig[]>([]);
@@ -218,16 +216,36 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
 
   // --- Attendance Management (Bulk) ---
   const [attClass, setAttClass] = useState('');
+  const [attDate, setAttDate] = useState(new Date().toISOString().split('T')[0]);
   const [attStudents, setAttStudents] = useState<Student[]>([]);
   const [tickedStudents, setTickedStudents] = useState<string[]>([]); // List of IDs
 
-  const loadClassForAttendance = async (cls: string) => {
+  // Load students and their attendance for the selected date
+  const loadClassForAttendance = async (cls: string, date: string) => {
     setAttClass(cls);
     const students = await api.getStudentsByClass(cls);
     setAttStudents(students);
-    // Default all ticked? or none? Let's default none.
-    setTickedStudents([]);
+    
+    // Fetch attendance records for these students
+    const records = await api.getAttendanceForClass(students.map(s => s.contact));
+    
+    // Pre-fill ticks based on history[date] == 'present'
+    const presentIds: string[] = [];
+    students.forEach(s => {
+      const record = records.find(r => r.studentId === s.contact);
+      if (record && record.history && record.history[date] === 'present') {
+        presentIds.push(s.contact);
+      }
+    });
+    setTickedStudents(presentIds);
   };
+  
+  // Reload when date changes if class is already selected
+  useEffect(() => {
+    if (attClass && attDate) {
+      loadClassForAttendance(attClass, attDate);
+    }
+  }, [attDate]);
 
   const toggleAttTick = (id: string) => {
     if (tickedStudents.includes(id)) setTickedStudents(tickedStudents.filter(x => x !== id));
@@ -235,9 +253,51 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
   };
 
   const saveBulkAttendance = async () => {
-    await api.bulkUpdateAttendance(attStudents, tickedStudents);
-    alert('Attendance Updated Successfully!');
-    setAttClass('');
+    await api.bulkUpdateAttendance(attStudents, tickedStudents, attDate);
+    alert(`Attendance for ${attDate} Updated!`);
+  };
+
+  // --- FEES MANAGEMENT ---
+  const [feeStructure, setFeeStructure] = useState<FeeStructure>({});
+  const [feeClass, setFeeClass] = useState('');
+  const [feeStudents, setFeeStudents] = useState<Student[]>([]);
+  const [selectedFeeStudent, setSelectedFeeStudent] = useState<string | null>(null);
+  const [studentFeeRecord, setStudentFeeRecord] = useState<Record<string, boolean>>({}); // Month -> Paid
+  const currentYear = new Date().getFullYear().toString();
+
+  useEffect(() => {
+    if (activeTab === 'fees') {
+      api.getFeeStructure().then(setFeeStructure);
+    }
+  }, [activeTab]);
+
+  const saveFeeStructure = async () => {
+    await api.saveFeeStructure(feeStructure);
+    alert('Fee Structure Saved');
+  };
+
+  const loadFeeStudents = async (cls: string) => {
+    setFeeClass(cls);
+    setFeeStudents(await api.getStudentsByClass(cls));
+    setSelectedFeeStudent(null);
+  };
+
+  const openStudentFeeCard = async (studentId: string) => {
+    setSelectedFeeStudent(studentId);
+    const record = await api.getStudentFeeRecord(studentId, currentYear);
+    setStudentFeeRecord(record.payments);
+  };
+
+  const toggleFeeMonth = async (month: string) => {
+    if (!selectedFeeStudent) return;
+    const newRecord = { ...studentFeeRecord, [month]: !studentFeeRecord[month] };
+    setStudentFeeRecord(newRecord);
+    
+    await api.updateStudentFee({
+      studentId: selectedFeeStudent,
+      year: currentYear,
+      payments: newRecord
+    });
   };
 
   return (
@@ -252,6 +312,7 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
             { id: 'students', label: 'Students', icon: UserPlus },
             { id: 'attendance', label: 'Attendance', icon: CheckSquare },
             { id: 'results', label: 'Results', icon: Users },
+            { id: 'fees', label: 'Fees', icon: IndianRupee },
             { id: 'subjects', label: 'Subjects', icon: BookOpen },
             { id: 'notifications', label: 'Notices', icon: Bell },
           ].map(tab => (
@@ -275,7 +336,6 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
             <Card className="border-l-4 border-l-emerald-500">
               <h3 className="font-bold text-lg mb-4 text-emerald-900">Student Registration</h3>
               
-              {/* 1. Class Selection Widget */}
               <div className="mb-6">
                 <label className="block text-sm font-medium text-gray-700 mb-2">1. Select Class (Required)</label>
                 <div className="bg-gray-100 rounded-xl p-2 space-y-2">
@@ -301,7 +361,6 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
                 </div>
               </div>
 
-              {/* 2. Subject Selection */}
               {newStudent.class && (
                 <div className="mb-6 animate-in fade-in slide-in-from-top-2">
                   <label className="block text-sm font-medium text-gray-700 mb-2">2. Enrolled Subjects</label>
@@ -323,7 +382,6 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
                 </div>
               )}
 
-              {/* 3. Details Form */}
               <div className="space-y-4">
                  <Input label="Full Name" value={newStudent.name || ''} onChange={e => setNewStudent({...newStudent, name: e.target.value})} />
                  <Input label="Contact (Login ID)" value={newStudent.contact || ''} onChange={e => setNewStudent({...newStudent, contact: e.target.value})} />
@@ -342,7 +400,6 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
                  <span className="text-xs bg-gray-200 px-2 py-1 rounded-full">{students.length} Total</span>
                </div>
                
-               {/* Filter/List */}
                {students.map(s => (
                  <div key={s.id} className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 flex justify-between items-center">
                    <div>
@@ -356,6 +413,90 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
           </div>
         )}
 
+        {/* --- FEES TAB --- */}
+        {activeTab === 'fees' && (
+          <div className="space-y-6">
+            {/* Fee Config Section */}
+            <Card>
+              <h3 className="font-bold mb-4 text-emerald-800 flex items-center gap-2"><IndianRupee size={20}/> Monthly Fee Structure</h3>
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                {AVAILABLE_CLASSES.map(cls => (
+                  <div key={cls}>
+                     <label className="text-xs text-gray-500 block">{cls}</label>
+                     <input 
+                       type="number" 
+                       className="border rounded p-2 w-full font-semibold"
+                       value={feeStructure[cls] || ''}
+                       onChange={(e) => setFeeStructure({...feeStructure, [cls]: parseInt(e.target.value) || 0})}
+                     />
+                  </div>
+                ))}
+              </div>
+              <Button onClick={saveFeeStructure} fullWidth variant="secondary">Update Fees</Button>
+            </Card>
+
+            {/* Fee Payment Section */}
+            <div className="space-y-4">
+              <h3 className="font-bold text-gray-700">Student Fee Records ({currentYear})</h3>
+              
+              {!feeClass ? (
+                 <div className="grid gap-2">
+                   {AVAILABLE_CLASSES.map(cls => (
+                     <button key={cls} onClick={() => loadFeeStudents(cls)} className="p-3 bg-white border rounded shadow-sm hover:bg-emerald-50 font-semibold text-left">
+                       {cls}
+                     </button>
+                   ))}
+                 </div>
+              ) : (
+                <>
+                  <button onClick={() => setFeeClass('')} className="text-sm underline text-gray-500 mb-2">Back to Classes</button>
+                  <div className="grid gap-3">
+                    {feeStudents.map(s => (
+                      <div key={s.id} className="bg-white p-4 rounded-xl border shadow-sm">
+                         <div className="flex justify-between items-center mb-2" onClick={() => openStudentFeeCard(s.contact)}>
+                           <div>
+                             <p className="font-bold">{s.name}</p>
+                             <p className="text-xs text-gray-500">{s.rollNumber}</p>
+                           </div>
+                           <Button 
+                             onClick={(e) => { e.stopPropagation(); openStudentFeeCard(s.contact); }} 
+                             variant="outline" 
+                             className="text-xs py-1 px-3"
+                           >
+                             Manage Fees
+                           </Button>
+                         </div>
+
+                         {/* Detailed Fee Card Grid */}
+                         {selectedFeeStudent === s.contact && (
+                           <div className="mt-4 pt-4 border-t animate-in fade-in">
+                             <p className="text-sm font-bold text-gray-600 mb-2">Monthly Status (Tick if Paid)</p>
+                             <div className="grid grid-cols-3 gap-2">
+                               {MONTHS.map(month => {
+                                 const isPaid = studentFeeRecord[month] || false;
+                                 return (
+                                   <div 
+                                     key={month} 
+                                     onClick={() => toggleFeeMonth(month)}
+                                     className={`cursor-pointer border rounded p-2 text-center text-xs font-semibold transition-colors flex flex-col items-center gap-1 ${isPaid ? 'bg-emerald-100 border-emerald-300 text-emerald-800' : 'bg-gray-50 border-gray-200 text-gray-400'}`}
+                                   >
+                                      {isPaid ? <CheckCircle size={14}/> : <div className="w-3.5 h-3.5 border rounded-full border-gray-300"></div>}
+                                      {month.slice(0, 3)}
+                                   </div>
+                                 );
+                               })}
+                             </div>
+                           </div>
+                         )}
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* --- ATTENDANCE TAB --- */}
         {activeTab === 'attendance' && (
           <div className="space-y-6">
@@ -365,7 +506,7 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
                  {AVAILABLE_CLASSES.map(cls => (
                    <button 
                     key={cls}
-                    onClick={() => loadClassForAttendance(cls)}
+                    onClick={() => loadClassForAttendance(cls, attDate)}
                     className="bg-white p-4 rounded-xl shadow-sm border border-emerald-100 text-left font-bold text-emerald-800 flex justify-between hover:bg-emerald-50"
                    >
                      {cls}
@@ -376,7 +517,18 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
              ) : (
                <div className="animate-in fade-in">
                  <div className="flex justify-between items-center mb-4">
-                    <h3 className="font-bold text-lg">{attClass} Attendance</h3>
+                    <div>
+                        <h3 className="font-bold text-lg text-emerald-900">{attClass} Attendance</h3>
+                        <div className="flex items-center gap-2 text-sm text-emerald-600 mt-1">
+                            <Calendar size={14}/>
+                            <input 
+                                type="date" 
+                                value={attDate} 
+                                onChange={(e) => setAttDate(e.target.value)}
+                                className="bg-transparent font-bold border-b border-emerald-300 focus:outline-none text-emerald-800"
+                            />
+                        </div>
+                    </div>
                     <button onClick={() => setAttClass('')} className="text-sm text-gray-500 underline">Change Class</button>
                  </div>
                  
@@ -399,7 +551,7 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
                    ))}
                  </div>
                  <div className="mt-4">
-                   <Button onClick={saveBulkAttendance} fullWidth>Submit Attendance</Button>
+                   <Button onClick={saveBulkAttendance} fullWidth>Save for {attDate}</Button>
                  </div>
                </div>
              )}
@@ -518,7 +670,6 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
                 />
               </div>
               
-              {/* Image Upload */}
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">Attach Image</label>
                 <input 
@@ -535,7 +686,6 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
                 )}
               </div>
 
-              {/* PDF Upload */}
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">Attach PDF</label>
                 <input 
@@ -576,3 +726,4 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
     </div>
   );
 };
+import { CheckCircle } from 'lucide-react';
