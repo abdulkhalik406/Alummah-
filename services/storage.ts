@@ -1,9 +1,9 @@
-
-import { initializeApp } from "firebase/app";
+import * as firebaseApp from "firebase/app";
 import { 
   getFirestore, collection, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, 
   query, where, getDocs, orderBy, onSnapshot, serverTimestamp, Firestore 
 } from "firebase/firestore";
+import { getStorage, ref, uploadBytes, getDownloadURL, FirebaseStorage } from "firebase/storage";
 import { User, UserRole, Student, Notification, StudentResult, AttendanceRecord, SubjectConfig, ADMIN_CONTACTS, FeeStructure, FeePaymentRecord } from '../types';
 
 // --- CONFIG & INIT ---
@@ -28,12 +28,15 @@ const paths = {
   fees: `${BASE_PATH}/fees`
 };
 
-// Initialize Firestore ONLY if config exists to avoid "demo-project" connection errors
+// Initialize Firebase
 let db: Firestore | null = null;
+let storage: FirebaseStorage | null = null;
+
 if (window.__firebase_config) {
   try {
-    const app = initializeApp(window.__firebase_config);
+    const app = firebaseApp.initializeApp(window.__firebase_config);
     db = getFirestore(app);
+    storage = getStorage(app);
     console.log("Firebase initialized successfully");
   } catch (err) {
     console.error("Firebase init failed, falling back to LocalStorage", err);
@@ -303,6 +306,27 @@ export const api = {
     
     scores.sort((a, b) => b - a);
     return scores.indexOf(myTotal) + 1;
+  },
+
+  // Upload
+  uploadFile: async (file: File, folder: string): Promise<string> => {
+    if (storage) {
+      try {
+        const storageRef = ref(storage, `${folder}/${Date.now()}_${file.name}`);
+        const snapshot = await uploadBytes(storageRef, file);
+        return await getDownloadURL(snapshot.ref);
+      } catch (e) {
+        console.error("Upload failed", e);
+        throw e;
+      }
+    } else {
+      // Offline fallback: Convert to Base64
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(file);
+      });
+    }
   },
 
   // Notifications

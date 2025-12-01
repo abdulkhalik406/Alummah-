@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { StudentResult, AttendanceRecord, Student, SubjectConfig, FeeStructure, FeePaymentRecord, MONTHS } from '../types';
 import { api, calculateGradeInfo } from '../services/storage';
 import { Button, Card } from '../components/UI';
-import { Download, CheckCircle, XCircle, ChevronLeft, ChevronRight, IndianRupee } from 'lucide-react';
+import { Download, CheckCircle, XCircle, ChevronLeft, ChevronRight, IndianRupee, Loader2 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 
 export const Marksheet: React.FC<{ student: Student, onBack: () => void }> = ({ student, onBack }) => {
@@ -13,6 +13,7 @@ export const Marksheet: React.FC<{ student: Student, onBack: () => void }> = ({ 
   const [rank, setRank] = useState<number | null>(null);
   const [availableExams, setAvailableExams] = useState<string[]>([]);
   const [selectedExam, setSelectedExam] = useState<string>('');
+  const [isDownloading, setIsDownloading] = useState(false);
 
   // Fetch all results initially
   const [allResults, setAllResults] = useState<StudentResult[]>([]);
@@ -63,20 +64,32 @@ export const Marksheet: React.FC<{ student: Student, onBack: () => void }> = ({ 
   };
 
   const handleDownloadPDF = () => {
-    const doc = new jsPDF();
     const element = document.getElementById('marksheet-content');
-    
-    if (element) {
-      doc.html(element, {
-        callback: function (doc: any) {
-          doc.save(`${student.name}_${selectedExam}_Result.pdf`);
-        },
-        x: 10,
-        y: 10,
-        width: 190,
-        windowWidth: 800 
-      });
-    }
+    if (!element) return;
+
+    setIsDownloading(true);
+    // Create PDF instance
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4'
+    });
+
+    doc.html(element, {
+      callback: function (doc) {
+        doc.save(`${student.name}_${selectedExam}_Result.pdf`);
+        setIsDownloading(false);
+      },
+      x: 10,
+      y: 10,
+      width: 190, // A4 width (210mm) - margins (20mm)
+      windowWidth: 800, // Matches the CSS width of the element
+      html2canvas: {
+        scale: 0.26, // Helps with resolution
+        useCORS: true, // Essential for loading external images like the logo
+        logging: false
+      }
+    });
   };
 
   const getOverallPL = (grade: string = '') => {
@@ -107,7 +120,7 @@ export const Marksheet: React.FC<{ student: Student, onBack: () => void }> = ({ 
         
         {availableExams.length > 1 && (
            <select 
-             className="px-3 py-2 rounded border border-gray-300 text-sm font-semibold"
+             className="px-3 py-2 rounded border border-gray-300 text-sm font-semibold outline-none"
              value={selectedExam}
              onChange={handleExamChange}
            >
@@ -115,15 +128,21 @@ export const Marksheet: React.FC<{ student: Student, onBack: () => void }> = ({ 
            </select>
         )}
 
-        <Button onClick={handleDownloadPDF} className="py-2 text-sm"><Download size={16}/> Download</Button>
+        <Button onClick={handleDownloadPDF} disabled={isDownloading} className="py-2 text-sm min-w-[120px]">
+          {isDownloading ? (
+            <><Loader2 size={16} className="animate-spin"/> Generating...</>
+          ) : (
+            <><Download size={16}/> Download PDF</>
+          )}
+        </Button>
       </div>
 
       {!result ? (
          <div className="p-10 text-center text-gray-500">Selected exam result not found.</div>
       ) : (
       /* Printable Area Wrapper for JS PDF scaling */
-      <div className="flex justify-center mt-4">
-        <div className="w-[800px] bg-white p-8 border border-gray-200 shadow-xl" id="marksheet-content">
+      <div className="flex justify-center mt-4 overflow-x-auto">
+        <div className="w-[800px] bg-white p-8 border border-gray-200 shadow-xl shrink-0" id="marksheet-content">
           
           {/* Header */}
           <div className="text-center border-b-2 border-emerald-600 pb-4 mb-6 relative">

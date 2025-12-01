@@ -1,9 +1,8 @@
-
 import React, { useState, useEffect } from 'react';
 import { Student, Notification, StudentResult, SubjectConfig, AVAILABLE_CLASSES, FeeStructure, MONTHS } from '../types';
 import { api, calculateGradeInfo } from '../services/storage';
 import { Button, Input, Card } from '../components/UI';
-import { Plus, Trash2, UserPlus, Users, X, BookOpen, Bell, ArrowUp, ArrowDown, CheckSquare, Square, FileText, Calendar, IndianRupee, Edit, CheckCircle } from 'lucide-react';
+import { Plus, Trash2, UserPlus, Users, X, BookOpen, Bell, ArrowUp, ArrowDown, CheckSquare, Square, FileText, Calendar, IndianRupee, Edit, CheckCircle, Loader2 } from 'lucide-react';
 
 // --- CONFIG ---
 
@@ -110,18 +109,19 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
   };
 
   // --- Notification Logic ---
-  const [newNotif, setNewNotif] = useState<{ text: string, imageUrl: string, pdfUrl?: string, pdfName?: string }>({ text: '', imageUrl: '' });
+  const [newNotif, setNewNotif] = useState<{ text: string, pdfName?: string }>({ text: '' });
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      setImageFile(file);
+      // Local preview
       const reader = new FileReader();
-      reader.onloadend = () => {
-        const result = reader.result as string;
-        setNewNotif({ ...newNotif, imageUrl: result });
-        setImagePreview(result);
-      };
+      reader.onloadend = () => setImagePreview(reader.result as string);
       reader.readAsDataURL(file);
     }
   };
@@ -129,30 +129,50 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
   const handlePdfUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 500 * 1024) { // 500KB limit
-        alert("File too large. Please upload PDF smaller than 500KB.");
+      if (file.size > 2 * 1024 * 1024) { // 2MB limit (relaxed for Cloud Storage)
+        alert("File too large. Please upload PDF smaller than 2MB.");
         e.target.value = '';
         return;
       }
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setNewNotif({ 
-          ...newNotif, 
-          pdfUrl: reader.result as string, 
-          pdfName: file.name 
-        });
-      };
-      reader.readAsDataURL(file);
+      setPdfFile(file);
+      setNewNotif({ ...newNotif, pdfName: file.name });
     }
   };
 
   const handleAddNotif = async () => {
     if (!newNotif.text) return;
-    await api.addNotification(newNotif);
-    setNewNotif({ text: '', imageUrl: '' });
-    setImagePreview(null);
-    refreshData();
+    setIsUploading(true);
+
+    try {
+      let imageUrl = '';
+      let pdfUrl = '';
+
+      if (imageFile) {
+        imageUrl = await api.uploadFile(imageFile, 'images');
+      }
+      if (pdfFile) {
+        pdfUrl = await api.uploadFile(pdfFile, 'documents');
+      }
+
+      await api.addNotification({
+        text: newNotif.text,
+        imageUrl,
+        pdfUrl,
+        pdfName: newNotif.pdfName
+      });
+
+      setNewNotif({ text: '' });
+      setImageFile(null);
+      setPdfFile(null);
+      setImagePreview(null);
+      refreshData();
+    } catch (e) {
+      alert("Failed to post notification. Please try again.");
+    } finally {
+      setIsUploading(false);
+    }
   };
+  
   const handleDeleteNotif = async (id: string) => {
     if(confirm('Delete?')) { await api.deleteNotification(id); refreshData(); }
   };
@@ -850,7 +870,7 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
                 {imagePreview && (
                   <div className="mt-2 relative inline-block">
                     <img src={imagePreview} alt="Preview" className="h-20 w-auto rounded border" />
-                    <button onClick={() => { setImagePreview(null); setNewNotif({...newNotif, imageUrl: ''}) }} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1"><X size={12}/></button>
+                    <button onClick={() => { setImagePreview(null); setImageFile(null); }} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1"><X size={12}/></button>
                   </div>
                 )}
               </div>
@@ -870,7 +890,9 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
                 )}
               </div>
 
-              <Button onClick={handleAddNotif} fullWidth>Publish</Button>
+              <Button onClick={handleAddNotif} fullWidth disabled={isUploading}>
+                {isUploading ? <><Loader2 className="animate-spin" size={20}/> Uploading...</> : 'Publish'}
+              </Button>
             </Card>
 
              <div className="space-y-4">
