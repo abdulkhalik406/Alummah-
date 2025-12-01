@@ -19,9 +19,9 @@ import {
 } from 'lucide-react';
 
 // --- CONSTANTS ---
-// Note: Google Drive folder links may not render directly in <img> tags. 
-// Ideally, use a direct image link (e.g., https://drive.google.com/uc?export=view&id=FILE_ID)
-const LOGO_URL = "https://drive.google.com/drive/u/0/folders/1IGScvXUnwUarpRkHBVp6uqIB74IHfytr";
+// Using UI Avatars as a reliable fallback logo generator since the Drive link was a folder.
+const LOGO_URL = "https://ui-avatars.com/api/?name=Maktabatul+Ummmathil+Muhammadia&background=065f46&color=ffffff&size=512&bold=true&length=1";
+const LOGO_FALLBACK = "https://ui-avatars.com/api/?name=MUM&background=065f46&color=ffffff&size=512&bold=true";
 
 // --- SUB-COMPONENTS FOR PUBLIC VIEWS ---
 
@@ -303,7 +303,12 @@ const LoginScreen = ({ onLogin, onBack }: { onLogin: (u: User) => void, onBack: 
   return (
     <div className="min-h-screen bg-emerald-50 flex flex-col items-center justify-center p-6 animate-in fade-in">
       <div className="w-32 h-32 bg-white rounded-full flex items-center justify-center mb-6 shadow-xl border-4 border-emerald-200 overflow-hidden p-4">
-        <img src={LOGO_URL} alt="Logo" className="w-full h-full object-contain" />
+        <img 
+          src={LOGO_URL} 
+          alt="Logo" 
+          className="w-full h-full object-contain" 
+          onError={(e) => e.currentTarget.src = LOGO_FALLBACK}
+        />
       </div>
       <h1 className="text-xl font-bold text-emerald-900 mb-1 text-center font-bengali">মক্তাবাতুল উম্মাতিল মুহাম্মাদিয়া</h1>
       <p className="text-emerald-600 mb-8 text-sm uppercase tracking-widest">School Management App</p>
@@ -396,7 +401,12 @@ const App: React.FC = () => {
 
         <div className="flex flex-col items-center text-white relative z-10">
            <div className="w-24 h-24 bg-white rounded-full flex items-center justify-center shadow-lg mb-3 border-4 border-emerald-200 overflow-hidden p-2">
-             <img src={LOGO_URL} alt="Maktab Logo" className="w-full h-full object-contain" />
+             <img 
+               src={LOGO_URL} 
+               alt="Maktab Logo" 
+               className="w-full h-full object-contain"
+               onError={(e) => e.currentTarget.src = LOGO_FALLBACK}
+             />
            </div>
            <h1 className="text-xl font-bold leading-tight text-center">মক্তাবাতুল উম্মাতিল মুহাম্মাদিয়া</h1>
            <p className="text-emerald-200 text-xs mt-1">স্বাগতম (Welcome)</p>

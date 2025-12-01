@@ -1,4 +1,4 @@
-import { initializeApp } from "firebase/app";
+import * as firebaseApp from "firebase/app";
 import { 
   getFirestore, collection, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, 
   query, where, getDocs, orderBy, onSnapshot, serverTimestamp, Firestore 
@@ -35,7 +35,7 @@ let storage: FirebaseStorage | null = null;
 
 if (window.__firebase_config) {
   try {
-    const app = initializeApp(window.__firebase_config);
+    const app = firebaseApp.initializeApp(window.__firebase_config);
     db = getFirestore(app);
     storage = getStorage(app);
     console.log("Firebase initialized successfully");
