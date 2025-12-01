@@ -3,7 +3,6 @@ import {
   getFirestore, collection, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, 
   query, where, getDocs, orderBy, onSnapshot, serverTimestamp, Firestore 
 } from "firebase/firestore";
-import { getStorage, ref, uploadBytes, getDownloadURL, FirebaseStorage } from "firebase/storage";
 import { User, UserRole, Student, Notification, StudentResult, AttendanceRecord, SubjectConfig, ADMIN_CONTACTS, FeeStructure, FeePaymentRecord, Feedback } from '../types';
 
 // --- CONFIG & INIT ---
@@ -18,6 +17,11 @@ declare global {
 const APP_ID = window.__app_id || 'maktab-default';
 const BASE_PATH = `/artifacts/${APP_ID}/public/data`;
 
+// Cloudinary Credentials
+const CLOUDINARY_CLOUD_NAME = 'dnfppupi4';
+const CLOUDINARY_API_KEY = '189714524459898';
+const CLOUDINARY_API_SECRET = 'yFHcdZR5ivs89fnDbwWCJ98xPT0';
+
 // Paths helper
 const paths = {
   students: `${BASE_PATH}/students`,
@@ -31,13 +35,11 @@ const paths = {
 
 // Initialize Firebase
 let db: Firestore | null = null;
-let storage: FirebaseStorage | null = null;
 
 if (window.__firebase_config) {
   try {
     const app = firebaseApp.initializeApp(window.__firebase_config);
     db = getFirestore(app);
-    storage = getStorage(app);
     console.log("Firebase initialized successfully");
   } catch (err) {
     console.error("Firebase init failed, falling back to LocalStorage", err);
@@ -46,7 +48,7 @@ if (window.__firebase_config) {
   console.warn("No Firebase config found. Running in Offline/Mock Mode.");
 }
 
-// --- GRADING LOGIC ---
+// --- HELPERS ---
 
 export const calculateGradeInfo = (marks: number) => {
   let grade = 'D';
@@ -62,8 +64,16 @@ export const calculateGradeInfo = (marks: number) => {
   return { grade, pl };
 };
 
+// SHA-1 Generator for Cloudinary Signature
+async function sha1(str: string) {
+  const enc = new TextEncoder();
+  const hash = await crypto.subtle.digest('SHA-1', enc.encode(str));
+  return Array.from(new Uint8Array(hash))
+    .map(v => v.toString(16).padStart(2, '0'))
+    .join('');
+}
+
 // --- SAFE STORAGE WRAPPER ---
-// Handles "Access is denied" errors in iframes/sandboxes
 const createSafeStorage = () => {
   try {
     const testKey = '__storage_test__';
@@ -85,7 +95,6 @@ const createSafeStorage = () => {
 const safeStorage = createSafeStorage();
 
 // --- LOCAL STORAGE MOCK HELPER ---
-// Simulates async DB calls for offline mode
 const LS = {
   get: (key: string) => {
     try {
@@ -97,7 +106,7 @@ const LS = {
       safeStorage.setItem(key, JSON.stringify(data));
     } catch {}
   },
-  delay: () => new Promise(r => setTimeout(r, 300)), // Simulate network latency
+  delay: () => new Promise(r => setTimeout(r, 300)), 
   
   // Specific Data Helpers
   students: () => LS.get('maktab_students') as Student[],
@@ -164,7 +173,6 @@ export const api = {
       });
     } else {
       const list = LS.students();
-      // Update if exists, else add
       const idx = list.findIndex(s => s.contact === student.contact);
       const newObj = { ...student, id: student.contact, role: UserRole.STUDENT };
       if (idx >= 0) list[idx] = newObj as Student;
@@ -251,9 +259,6 @@ export const api = {
       let totalObt = 0;
       Object.values(marksMap).forEach((m: any) => totalObt += m);
 
-      // Simple calculation for offline/quick mode. 
-      // Note: Ideally, fetch all subjects to calc full totals, but this persists the specific subject update.
-      
       const newResult: StudentResult = {
         ...(result || {
           studentId: update.studentId,
@@ -280,8 +285,7 @@ export const api = {
       }
     }
     
-    // Trigger a full recalculation for these students to ensure Grade/Pass status is correct based on ALL subjects
-    // This is an enhancement to ensure data consistency
+    // Recalculate Logic
     const allSubjects = await api.getSubjects();
     for(const update of updates) {
        const docId = `${update.studentId}_${examName.replace(/\s+/g, '_')}`;
@@ -299,7 +303,6 @@ export const api = {
          let maxTotal = 0;
          let isPass = true;
          
-         // Iterate available subjects in the result
          for(const sub of Object.keys(result.marks)) {
             const m = result.marks[sub];
             totalObt += m;
@@ -363,18 +366,36 @@ export const api = {
     return scores.indexOf(myTotal) + 1;
   },
 
-  // Upload
+  // Upload (Cloudinary Integration)
   uploadFile: async (file: File, folder: string): Promise<string> => {
-    if (storage) {
-      try {
-        const storageRef = ref(storage, `${folder}/${Date.now()}_${file.name}`);
-        const snapshot = await uploadBytes(storageRef, file);
-        return await getDownloadURL(snapshot.ref);
-      } catch (e) {
-        console.error("Upload failed", e);
-        throw e;
+    try {
+      const timestamp = Math.round((new Date()).getTime() / 1000);
+      
+      // Generate Signature
+      // String to sign: folder=folder&timestamp=timestamp + API_SECRET
+      const paramsToSign = `folder=${folder}&timestamp=${timestamp}${CLOUDINARY_API_SECRET}`;
+      const signature = await sha1(paramsToSign);
+
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('api_key', CLOUDINARY_API_KEY);
+      formData.append('timestamp', String(timestamp));
+      formData.append('folder', folder);
+      formData.append('signature', signature);
+
+      const response = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/auto/upload`, {
+        method: 'POST',
+        body: formData
+      });
+
+      const data = await response.json();
+      if (data.secure_url) {
+        return data.secure_url;
+      } else {
+        throw new Error(data.error?.message || 'Upload failed');
       }
-    } else {
+    } catch (e) {
+      console.error("Cloudinary upload failed", e);
       // Offline fallback: Convert to Base64
       return new Promise((resolve) => {
         const reader = new FileReader();
