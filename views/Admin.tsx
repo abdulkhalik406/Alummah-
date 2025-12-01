@@ -1,8 +1,9 @@
+
 import React, { useState, useEffect } from 'react';
-import { Student, Notification, StudentResult, SubjectConfig, AVAILABLE_CLASSES, FeeStructure, MONTHS } from '../types';
+import { Student, Notification, StudentResult, SubjectConfig, AVAILABLE_CLASSES, FeeStructure, MONTHS, Feedback } from '../types';
 import { api, calculateGradeInfo } from '../services/storage';
 import { Button, Input, Card } from '../components/UI';
-import { Plus, Trash2, UserPlus, Users, X, BookOpen, Bell, ArrowUp, ArrowDown, CheckSquare, Square, FileText, Calendar, IndianRupee, Edit, CheckCircle, Loader2 } from 'lucide-react';
+import { Plus, Trash2, UserPlus, Users, X, BookOpen, Bell, ArrowUp, ArrowDown, CheckSquare, Square, FileText, Calendar, IndianRupee, Edit, CheckCircle, Loader2, MessageSquare } from 'lucide-react';
 
 // --- CONFIG ---
 
@@ -18,20 +19,22 @@ const getRecommendedSubjects = (className: string, allSubjects: SubjectConfig[])
 };
 
 export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
-  const [activeTab, setActiveTab] = useState<'students' | 'results' | 'notifications' | 'subjects' | 'attendance' | 'fees'>('students');
+  const [activeTab, setActiveTab] = useState<'students' | 'results' | 'notifications' | 'subjects' | 'attendance' | 'fees' | 'feedback'>('students');
   const [students, setStudents] = useState<Student[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [subjects, setSubjects] = useState<SubjectConfig[]>([]);
+  const [feedbackList, setFeedbackList] = useState<Feedback[]>([]);
   
   const refreshData = async () => {
     setStudents(await api.getStudents());
     setNotifications(await api.getNotifications());
     setSubjects(await api.getSubjects());
+    setFeedbackList(await api.getFeedback());
   };
 
   useEffect(() => {
     refreshData();
-  }, []);
+  }, [activeTab]); // Refresh when tab changes
 
   // --- Student Logic ---
   const [newStudent, setNewStudent] = useState<Partial<Student>>({ 
@@ -411,6 +414,14 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
     });
   };
 
+  // --- FEEDBACK MANAGEMENT ---
+  const handleDeleteFeedback = async (id: string) => {
+    if(confirm("Delete this message?")) {
+      await api.deleteFeedback(id);
+      setFeedbackList(feedbackList.filter(f => f.id !== id));
+    }
+  };
+
   return (
     <div className="pb-20 bg-gray-50 min-h-screen">
       <div className="bg-emerald-800 p-6 text-white sticky top-0 z-20 shadow-lg">
@@ -426,6 +437,7 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
             { id: 'fees', label: 'Fees', icon: IndianRupee },
             { id: 'subjects', label: 'Subjects', icon: BookOpen },
             { id: 'notifications', label: 'Notices', icon: Bell },
+            { id: 'feedback', label: 'Feedback', icon: MessageSquare },
           ].map(tab => (
             <button 
               key={tab.id}
@@ -911,6 +923,38 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
                ))}
             </div>
           </div>
+        )}
+
+        {/* --- FEEDBACK TAB --- */}
+        {activeTab === 'feedback' && (
+           <div className="space-y-4">
+             <div className="flex justify-between items-center">
+                 <h3 className="font-bold text-gray-700">Inbox</h3>
+                 <span className="text-xs bg-gray-200 px-2 py-1 rounded-full">{feedbackList.length} Messages</span>
+             </div>
+             
+             {feedbackList.length === 0 && <p className="text-gray-400 text-center py-10">No feedback received.</p>}
+             
+             {feedbackList.map(f => (
+               <Card key={f.id} className="relative group">
+                 <div className="flex justify-between items-start mb-2">
+                   <div>
+                     <p className="font-bold text-gray-800">{f.name}</p>
+                     <p className="text-xs text-gray-500">{f.contact} • {f.date}</p>
+                   </div>
+                   <button 
+                     onClick={() => f.id && handleDeleteFeedback(f.id)} 
+                     className="text-red-400 hover:text-red-600 p-1 bg-red-50 rounded"
+                   >
+                     <Trash2 size={16}/>
+                   </button>
+                 </div>
+                 <div className="bg-gray-50 p-3 rounded text-gray-700 text-sm whitespace-pre-wrap">
+                   {f.message}
+                 </div>
+               </Card>
+             ))}
+           </div>
         )}
 
       </div>

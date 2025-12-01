@@ -14,7 +14,8 @@ import {
   LogOut, 
   CalendarCheck,
   ChevronLeft,
-  IndianRupee
+  IndianRupee,
+  MessageSquare
 } from 'lucide-react';
 
 // --- CONSTANTS ---
@@ -212,6 +213,69 @@ const NotificationList = ({ onBack }: { onBack: () => void }) => {
   );
 };
 
+const FeedbackView = ({ user, onBack }: { user: User | null, onBack: () => void }) => {
+  const [formData, setFormData] = useState({ name: user?.name || '', contact: user?.id || '', message: '' });
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!formData.name || !formData.contact || !formData.message) {
+      alert("All fields are required");
+      return;
+    }
+    setLoading(true);
+    await api.addFeedback({
+      name: formData.name,
+      contact: formData.contact,
+      message: formData.message,
+      date: new Date().toISOString().split('T')[0]
+    });
+    alert("Feedback sent successfully!");
+    setFormData({ ...formData, message: '' }); // Reset message but keep name/contact
+    setLoading(false);
+    onBack();
+  };
+
+  return (
+    <div className="p-4 space-y-6 animate-in slide-in-from-right bg-gray-50 min-h-screen">
+       <div className="flex items-center gap-4 bg-white p-4 sticky top-0 shadow-sm z-10">
+        <button onClick={onBack}><ChevronLeft /></button>
+        <h2 className="font-bold text-lg font-bengali">মতামত / অভিযোগ (Feedback)</h2>
+      </div>
+
+      <Card>
+        <div className="space-y-4">
+          <Input 
+             label="আপনার নাম (Name)" 
+             value={formData.name} 
+             onChange={e => setFormData({...formData, name: e.target.value})}
+             readOnly={!!user} // Read-only if logged in
+             className={!!user ? "bg-gray-100" : ""}
+          />
+          <Input 
+             label="মোবাইল নম্বর (Mobile)" 
+             value={formData.contact} 
+             onChange={e => setFormData({...formData, contact: e.target.value})}
+             readOnly={!!user}
+             className={!!user ? "bg-gray-100" : ""}
+          />
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">বার্তা (Message)</label>
+            <textarea 
+               className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-emerald-500 outline-none h-32"
+               placeholder="আপনার মতামত বা অভিযোগ লিখুন..."
+               value={formData.message}
+               onChange={e => setFormData({...formData, message: e.target.value})}
+            />
+          </div>
+          <Button fullWidth onClick={handleSubmit} disabled={loading}>
+            {loading ? 'Sending...' : 'জমা দিন (Submit)'}
+          </Button>
+        </div>
+      </Card>
+    </div>
+  );
+};
+
 const LoginScreen = ({ onLogin, onBack }: { onLogin: (u: User) => void, onBack: () => void }) => {
   const [contact, setContact] = useState('');
   const [loading, setLoading] = useState(false);
@@ -267,7 +331,7 @@ const LoginScreen = ({ onLogin, onBack }: { onLogin: (u: User) => void, onBack: 
 // --- MAIN APP COMPONENT ---
 
 enum View {
-  HOME, LOGIN, NOTIFICATIONS, RULES, ABOUT, RESULT, ATTENDANCE, FEES, ADMIN
+  HOME, LOGIN, NOTIFICATIONS, RULES, ABOUT, RESULT, ATTENDANCE, FEES, FEEDBACK, ADMIN
 }
 
 const App: React.FC = () => {
@@ -314,6 +378,8 @@ const App: React.FC = () => {
   if (currentView === View.FEES && currentUser?.role === UserRole.STUDENT) {
     return <FeeStatusView student={currentUser as Student} onBack={() => setCurrentView(View.HOME)} />;
   }
+
+  if (currentView === View.FEEDBACK) return <FeedbackView user={currentUser} onBack={() => setCurrentView(View.HOME)} />;
 
   if (currentView === View.NOTIFICATIONS) return <NotificationList onBack={() => setCurrentView(View.HOME)} />;
   if (currentView === View.ABOUT) return <AboutUs onBack={() => setCurrentView(View.HOME)} />;
@@ -365,6 +431,7 @@ const App: React.FC = () => {
         <MenuTile icon={CalendarCheck} label="উপস্থিতি" onClick={() => navigateTo(View.ATTENDANCE)} color="text-blue-600 bg-blue-50" />
         <MenuTile icon={IndianRupee} label="বেতন (Fees)" onClick={() => navigateTo(View.FEES)} color="text-rose-600 bg-rose-50" />
         <MenuTile icon={Info} label="নিয়ম ও কানুন" onClick={() => navigateTo(View.RULES)} color="text-purple-600 bg-purple-50" />
+        <MenuTile icon={MessageSquare} label="মতামত (Feedback)" onClick={() => navigateTo(View.FEEDBACK)} color="text-cyan-600 bg-cyan-50" />
         <MenuTile icon={UserCircle} label="আমাদের সম্পর্কে" onClick={() => navigateTo(View.ABOUT)} color="text-teal-600 bg-teal-50" />
         
         {/* Logout Tile (Only visible if logged in for quick access, else disabled look) */}

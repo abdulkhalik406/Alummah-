@@ -66,6 +66,15 @@ export interface Notification {
   timestamp?: any;
 }
 
+export interface Feedback {
+  id?: string;
+  name: string;
+  contact: string;
+  message: string;
+  date: string;
+  timestamp?: any;
+}
+
 export const ADMIN_CONTACTS = ['9332039381', '9832414854'];
 
 export const GRADES = {

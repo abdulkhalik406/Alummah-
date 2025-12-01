@@ -1,10 +1,10 @@
-import * as firebaseApp from "firebase/app";
+import { initializeApp } from "firebase/app";
 import { 
   getFirestore, collection, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, 
   query, where, getDocs, orderBy, onSnapshot, serverTimestamp, Firestore 
 } from "firebase/firestore";
 import { getStorage, ref, uploadBytes, getDownloadURL, FirebaseStorage } from "firebase/storage";
-import { User, UserRole, Student, Notification, StudentResult, AttendanceRecord, SubjectConfig, ADMIN_CONTACTS, FeeStructure, FeePaymentRecord } from '../types';
+import { User, UserRole, Student, Notification, StudentResult, AttendanceRecord, SubjectConfig, ADMIN_CONTACTS, FeeStructure, FeePaymentRecord, Feedback } from '../types';
 
 // --- CONFIG & INIT ---
 
@@ -25,7 +25,8 @@ const paths = {
   results: `${BASE_PATH}/results`,
   attendance: `${BASE_PATH}/attendance`,
   config: `${BASE_PATH}/config`,
-  fees: `${BASE_PATH}/fees`
+  fees: `${BASE_PATH}/fees`,
+  feedback: `${BASE_PATH}/feedback`
 };
 
 // Initialize Firebase
@@ -34,7 +35,7 @@ let storage: FirebaseStorage | null = null;
 
 if (window.__firebase_config) {
   try {
-    const app = firebaseApp.initializeApp(window.__firebase_config);
+    const app = initializeApp(window.__firebase_config);
     db = getFirestore(app);
     storage = getStorage(app);
     console.log("Firebase initialized successfully");
@@ -106,6 +107,7 @@ const LS = {
   attendance: () => LS.get('maktab_attendance') as AttendanceRecord[],
   feeStructure: () => LS.get('maktab_fee_config') as FeeStructure,
   feeRecords: () => LS.get('maktab_fee_records') as FeePaymentRecord[],
+  feedback: () => LS.get('maktab_feedback') as Feedback[],
 };
 
 // --- API SERVICE ---
@@ -249,6 +251,9 @@ export const api = {
       let totalObt = 0;
       Object.values(marksMap).forEach((m: any) => totalObt += m);
 
+      // Simple calculation for offline/quick mode. 
+      // Note: Ideally, fetch all subjects to calc full totals, but this persists the specific subject update.
+      
       const newResult: StudentResult = {
         ...(result || {
           studentId: update.studentId,
@@ -273,6 +278,56 @@ export const api = {
         else list.push(newResult);
         LS.set('maktab_results', list);
       }
+    }
+    
+    // Trigger a full recalculation for these students to ensure Grade/Pass status is correct based on ALL subjects
+    // This is an enhancement to ensure data consistency
+    const allSubjects = await api.getSubjects();
+    for(const update of updates) {
+       const docId = `${update.studentId}_${examName.replace(/\s+/g, '_')}`;
+       let result: StudentResult | undefined;
+       
+       if(db) {
+          const snap = await getDoc(doc(db, paths.results, docId));
+          result = snap.data() as StudentResult;
+       } else {
+          result = LS.results().find(r => r.id === docId);
+       }
+       
+       if(result) {
+         let totalObt = 0;
+         let maxTotal = 0;
+         let isPass = true;
+         
+         // Iterate available subjects in the result
+         for(const sub of Object.keys(result.marks)) {
+            const m = result.marks[sub];
+            totalObt += m;
+            const cfg = allSubjects.find(s => s.name === sub);
+            maxTotal += cfg ? cfg.maxMarks : 100;
+            if(m < 35) isPass = false;
+         }
+         
+         const percentage = maxTotal > 0 ? (totalObt / maxTotal) * 100 : 0;
+         const { grade } = calculateGradeInfo(percentage);
+         
+         const updatedRes = {
+           ...result,
+           totalMarks: totalObt,
+           maxTotalMarks: maxTotal,
+           percentage: parseFloat(percentage.toFixed(2)),
+           overallGrade: grade,
+           isPass
+         };
+         
+         if(db) await setDoc(doc(db, paths.results, docId), updatedRes);
+         else {
+            const list = LS.results();
+            const idx = list.findIndex(r => r.id === docId);
+            list[idx] = updatedRes;
+            LS.set('maktab_results', list);
+         }
+       }
     }
   },
 
@@ -495,6 +550,46 @@ export const api = {
       if (idx >= 0) list[idx] = record;
       else list.push(record);
       LS.set('maktab_fee_records', list);
+    }
+  },
+
+  // --- FEEDBACK ---
+
+  getFeedback: async (): Promise<Feedback[]> => {
+    if (db) {
+      const q = query(collection(db, paths.feedback), orderBy('timestamp', 'desc'));
+      const snapshot = await getDocs(q);
+      return snapshot.docs.map(d => ({ ...d.data(), id: d.id } as Feedback));
+    } else {
+      await LS.delay();
+      return LS.feedback().sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    }
+  },
+
+  addFeedback: async (feedback: Omit<Feedback, 'id' | 'timestamp'>) => {
+    const newFeedback = {
+      ...feedback,
+      timestamp: Date.now()
+    };
+
+    if (db) {
+      await addDoc(collection(db, paths.feedback), {
+        ...newFeedback,
+        timestamp: serverTimestamp()
+      });
+    } else {
+      const list = LS.feedback();
+      list.push({ ...newFeedback, id: Math.random().toString(36).substr(2, 9) });
+      LS.set('maktab_feedback', list);
+    }
+  },
+
+  deleteFeedback: async (id: string) => {
+    if (db) {
+      await deleteDoc(doc(db, paths.feedback, id));
+    } else {
+      const list = LS.feedback().filter(f => f.id !== id);
+      LS.set('maktab_feedback', list);
     }
   }
 };
