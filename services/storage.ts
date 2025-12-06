@@ -373,6 +373,7 @@ export const api = {
       
       // Generate Signature
       // String to sign: folder=folder&timestamp=timestamp + API_SECRET
+      // Note: Parameters must be alphabetical
       const paramsToSign = `folder=${folder}&timestamp=${timestamp}${CLOUDINARY_API_SECRET}`;
       const signature = await sha1(paramsToSign);
 
@@ -392,10 +393,12 @@ export const api = {
       if (data.secure_url) {
         return data.secure_url;
       } else {
+        console.error("Cloudinary Error", data);
         throw new Error(data.error?.message || 'Upload failed');
       }
     } catch (e) {
       console.error("Cloudinary upload failed", e);
+      alert("Online upload failed. Switching to offline mode (local storage only).");
       // Offline fallback: Convert to Base64
       return new Promise((resolve) => {
         const reader = new FileReader();
@@ -559,6 +562,24 @@ export const api = {
       if (rec) return rec;
     }
     return { studentId, year, payments: {} };
+  },
+
+  getAllFeeRecords: async (): Promise<FeePaymentRecord[]> => {
+    if (db) {
+      const snapshot = await getDocs(collection(db, paths.fees));
+      return snapshot.docs.map(d => d.data() as FeePaymentRecord);
+    } else {
+      return LS.feeRecords();
+    }
+  },
+
+  getAllAttendance: async (): Promise<AttendanceRecord[]> => {
+    if (db) {
+      const snapshot = await getDocs(collection(db, paths.attendance));
+      return snapshot.docs.map(d => d.data() as AttendanceRecord);
+    } else {
+      return LS.attendance();
+    }
   },
 
   updateStudentFee: async (record: FeePaymentRecord) => {
