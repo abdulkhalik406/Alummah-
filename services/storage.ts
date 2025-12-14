@@ -22,7 +22,9 @@ const BASE_PATH = `/artifacts/${APP_ID}/public/data`;
 const CLOUDINARY_CLOUD_NAME = 'dnfppupi4';
 const CLOUDINARY_API_KEY = '248764635877288';
 const CLOUDINARY_API_SECRET = 'CQCR-QBeSgtt0cVytzcyFoJLe24';
-const CLOUDINARY_UPLOAD_PRESET = 'cloudinary_3d_9e9f61fe-511e-4d24-856a-851cf3a3068c';
+// Note: We are using a fully signed upload flow with API Key/Secret. 
+// We ignore the upload preset to avoid conflicts if the provided preset is 'Unsigned'.
+// const CLOUDINARY_UPLOAD_PRESET = 'cloudinary_3d_9e9f61fe-511e-4d24-856a-851cf3a3068c'; 
 
 // Paths helper
 const paths = {
@@ -68,6 +70,11 @@ export const calculateGradeInfo = (marks: number) => {
 
 // SHA-1 Generator for Cloudinary Signature
 async function sha1(str: string) {
+  // Check for crypto support
+  if (!window.crypto || !window.crypto.subtle) {
+    console.error("Crypto API not available. Cloudinary upload may fail.");
+    return "";
+  }
   const enc = new TextEncoder();
   const hash = await crypto.subtle.digest('SHA-1', enc.encode(str));
   return Array.from(new Uint8Array(hash))
@@ -360,16 +367,21 @@ export const api = {
     }
   },
 
-  // File Upload (Cloudinary)
+  // File Upload (Cloudinary Signed Upload)
   uploadFile: async (file: File, folder: string): Promise<string> => {
     // 1. Get Signature params
     const timestamp = Math.round((new Date()).getTime() / 1000);
     
-    // Params must be sorted alphabetically: folder, timestamp, upload_preset
-    const params = `folder=${folder}&timestamp=${timestamp}&upload_preset=${CLOUDINARY_UPLOAD_PRESET}${CLOUDINARY_API_SECRET}`;
+    // Params must be sorted alphabetically for signature generation.
+    // We are NOT including upload_preset to avoid conflicts if the preset is Unsigned.
+    // We are using API Key + Secret which allows authenticated uploads to any folder.
+    const params = `folder=${folder}&timestamp=${timestamp}${CLOUDINARY_API_SECRET}`;
     
     // 2. Generate Signature
     const signature = await sha1(params);
+    if (!signature) {
+      throw new Error("Could not generate signature (Crypto API missing)");
+    }
     
     // 3. Upload
     const formData = new FormData();
@@ -377,8 +389,8 @@ export const api = {
     formData.append('api_key', CLOUDINARY_API_KEY);
     formData.append('timestamp', timestamp.toString());
     formData.append('folder', folder);
-    formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
     formData.append('signature', signature);
+    // Note: upload_preset is excluded.
     
     try {
       const response = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/auto/upload`, {
@@ -387,10 +399,13 @@ export const api = {
       });
       const data = await response.json();
       if (data.secure_url) return data.secure_url;
+      console.error("Cloudinary Error:", data);
       throw new Error(data.error?.message || 'Upload failed');
-    } catch (e) {
-      console.error("Cloudinary upload error:", e);
-      // Fallback to Base64 if cloud upload fails
+    } catch (e: any) {
+      console.error("Cloudinary upload exception:", e);
+      
+      // Fallback to Base64 if cloud upload fails (e.g. network/cors issues)
+      // This ensures the app doesn't break completely.
       return new Promise((resolve) => {
         const reader = new FileReader();
         reader.onloadend = () => resolve(reader.result as string);
@@ -422,8 +437,6 @@ export const api = {
   },
 
   getAttendanceForClass: async (studentIds: string[]): Promise<AttendanceRecord[]> => {
-    // Firestore "in" query limited to 10, so better to fetch individually or use bulk if small
-    // For simplicity, we can fetch all or loop
     const results: AttendanceRecord[] = [];
     for (const id of studentIds) {
       const r = await api.getAttendance(id);
