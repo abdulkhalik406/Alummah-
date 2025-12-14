@@ -22,6 +22,7 @@ const BASE_PATH = `/artifacts/${APP_ID}/public/data`;
 const CLOUDINARY_CLOUD_NAME = 'dnfppupi4';
 const CLOUDINARY_API_KEY = '248764635877288';
 const CLOUDINARY_API_SECRET = 'CQCR-QBeSgtt0cVytzcyFoJLe24';
+const CLOUDINARY_UPLOAD_PRESET = 'cloudinary_3d_9e9f61fe-511e-4d24-856a-851cf3a3068c';
 
 // Paths helper
 const paths = {
@@ -363,7 +364,9 @@ export const api = {
   uploadFile: async (file: File, folder: string): Promise<string> => {
     // 1. Get Signature params
     const timestamp = Math.round((new Date()).getTime() / 1000);
-    const params = `folder=${folder}&timestamp=${timestamp}${CLOUDINARY_API_SECRET}`;
+    
+    // Params must be sorted alphabetically: folder, timestamp, upload_preset
+    const params = `folder=${folder}&timestamp=${timestamp}&upload_preset=${CLOUDINARY_UPLOAD_PRESET}${CLOUDINARY_API_SECRET}`;
     
     // 2. Generate Signature
     const signature = await sha1(params);
@@ -374,6 +377,7 @@ export const api = {
     formData.append('api_key', CLOUDINARY_API_KEY);
     formData.append('timestamp', timestamp.toString());
     formData.append('folder', folder);
+    formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
     formData.append('signature', signature);
     
     try {
