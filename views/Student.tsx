@@ -31,8 +31,8 @@ export const Marksheet: React.FC<{ student: Student, onBack: () => void }> = ({ 
       setAvailableExams(exams);
 
       if (exams.length > 0) {
-        // Default to 'Annual 2024' if it exists, otherwise the first one
-        const defaultExam = exams.includes('Annual 2024') ? 'Annual 2024' : exams[0];
+        // Default to 'Annual 2026' if it exists, otherwise the first one
+        const defaultExam = exams.includes('Annual 2026') ? 'Annual 2026' : exams[0];
         setSelectedExam(defaultExam);
         
         const examResult = results.find(r => r.examName === defaultExam);
@@ -147,7 +147,7 @@ export const Marksheet: React.FC<{ student: Student, onBack: () => void }> = ({ 
           {/* Header */}
           <div className="text-center border-b-2 border-emerald-600 pb-4 mb-6 relative">
             <h1 className="text-3xl font-bold text-emerald-800 uppercase tracking-wide">MAKTABATUL UMMMATHIL MUHAMMADIA</h1>
-            <p className="text-lg text-gray-600 mt-1">North Ramchandrapur</p>
+            <p className="text-lg text-gray-600 mt-1">Uttar Ramchandrapur</p>
             <div className="mt-4 inline-block px-6 py-1 bg-emerald-100 rounded-full">
               <h2 className="text-xl font-semibold text-emerald-800">PROGRESS REPORT</h2>
             </div>
@@ -428,3 +428,4 @@ export const FeeStatusView: React.FC<{ student: Student, onBack: () => void }> =
     </div>
   );
 };
+    

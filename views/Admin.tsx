@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect } from 'react';
-import { Student, Notification, StudentResult, SubjectConfig, AVAILABLE_CLASSES, FeeStructure, MONTHS, Feedback } from '../types';
+import { Student, Notification, StudentResult, SubjectConfig, AVAILABLE_CLASSES, FeeStructure, MONTHS, Feedback, AttendanceRecord, FeePaymentRecord } from '../types';
 import { api, calculateGradeInfo } from '../services/storage';
 import { Button, Input, Card } from '../components/UI';
-import { Plus, Trash2, UserPlus, Users, X, BookOpen, Bell, ArrowUp, ArrowDown, CheckSquare, Square, FileText, Calendar, IndianRupee, Edit, CheckCircle, Loader2, MessageSquare } from 'lucide-react';
+import { Plus, Trash2, UserPlus, Users, X, BookOpen, Bell, ArrowUp, ArrowDown, CheckSquare, Square, FileText, Calendar, IndianRupee, Edit, CheckCircle, Loader2, MessageSquare, LayoutDashboard, List } from 'lucide-react';
 
 // --- CONFIG ---
 
@@ -37,10 +37,40 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
   }, [activeTab]); // Refresh when tab changes
 
   // --- Student Logic ---
+  const [studentViewMode, setStudentViewMode] = useState<'register' | 'overview'>('register');
   const [newStudent, setNewStudent] = useState<Partial<Student>>({ 
     class: '', 
     subjects: [] 
   });
+  
+  // Overview Data State
+  const [overviewData, setOverviewData] = useState<{
+    attendance: AttendanceRecord[],
+    fees: FeePaymentRecord[],
+    results: StudentResult[]
+  }>({ attendance: [], fees: [], results: [] });
+  const [overviewClass, setOverviewClass] = useState<string>('All');
+  const [overviewLoading, setOverviewLoading] = useState(false);
+
+  // Load Overview Data
+  const loadOverviewData = async () => {
+    setOverviewLoading(true);
+    const year = new Date().getFullYear().toString();
+    const [att, fees, res] = await Promise.all([
+      api.getAllAttendance(),
+      api.getAllFeeRecords(year),
+      api.getResults()
+    ]);
+    setOverviewData({ attendance: att, fees, results: res });
+    setOverviewLoading(false);
+  };
+
+  // Trigger load when switching to overview
+  useEffect(() => {
+    if (activeTab === 'students' && studentViewMode === 'overview') {
+      loadOverviewData();
+    }
+  }, [studentViewMode, activeTab]);
 
   // Helper for Class Selection Widget
   const selectClass = (cls: string) => {
@@ -198,7 +228,7 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
   // --- Result Logic (Bulk) ---
   const [resultConfig, setResultConfig] = useState({ 
     class: '', 
-    exam: 'Annual 2024', 
+    exam: 'Annual 2026', 
     subject: '' 
   });
   const [classStudents, setClassStudents] = useState<Student[]>([]);
@@ -239,7 +269,7 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
 
   // --- Result Logic (Individual Edit) ---
   const [indResClass, setIndResClass] = useState('');
-  const [indResExam, setIndResExam] = useState('Annual 2024');
+  const [indResExam, setIndResExam] = useState('Annual 2026');
   const [indResStudentId, setIndResStudentId] = useState('');
   const [indResStudents, setIndResStudents] = useState<Student[]>([]);
   const [indResMarks, setIndResMarks] = useState<Record<string, number>>({});
@@ -453,86 +483,184 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
 
       <div className="p-4 space-y-6 max-w-lg mx-auto">
         
-        {/* --- STUDENT REGISTRATION TAB --- */}
+        {/* --- STUDENT REGISTRATION & OVERVIEW TAB --- */}
         {activeTab === 'students' && (
           <div className="space-y-6">
-            <Card className="border-l-4 border-l-emerald-500">
-              <h3 className="font-bold text-lg mb-4 text-emerald-900">Student Registration</h3>
-              
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-2">1. Select Class (Required)</label>
-                <div className="bg-gray-100 rounded-xl p-2 space-y-2">
-                  {AVAILABLE_CLASSES.map((cls) => {
-                    const isSelected = newStudent.class === cls;
-                    return (
-                      <div 
-                        key={cls}
-                        className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition-all ${isSelected ? 'bg-emerald-600 text-white shadow-md' : 'bg-white hover:bg-gray-50 text-gray-700'}`}
-                        onClick={() => selectClass(cls)}
-                      >
-                        <span className="font-semibold">{cls}</span>
-                        {isSelected && (
-                          <div className="flex items-center gap-2">
-                            <button onClick={(e) => { e.stopPropagation(); handleClassNav('up'); }} className="p-1 hover:bg-emerald-500 rounded"><ArrowUp size={16}/></button>
-                            <button onClick={(e) => { e.stopPropagation(); handleClassNav('down'); }} className="p-1 hover:bg-emerald-500 rounded"><ArrowDown size={16}/></button>
-                            <button onClick={(e) => { e.stopPropagation(); clearClassSelection(); }} className="p-1 hover:bg-red-500 rounded bg-red-600/20"><X size={16}/></button>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {newStudent.class && (
-                <div className="mb-6 animate-in fade-in slide-in-from-top-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">2. Enrolled Subjects</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {subjects.map(sub => {
-                      const isChecked = (newStudent.subjects || []).includes(sub.name);
-                      return (
-                        <div 
-                          key={sub.name}
-                          onClick={() => toggleSubject(sub.name)}
-                          className={`p-2 border rounded-lg text-sm flex items-center gap-2 cursor-pointer ${isChecked ? 'border-emerald-500 bg-emerald-50 text-emerald-900' : 'border-gray-200'}`}
-                        >
-                           {isChecked ? <CheckSquare size={16} className="text-emerald-600"/> : <Square size={16} className="text-gray-400"/>}
-                           {sub.name}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              <div className="space-y-4">
-                 <Input label="Full Name" value={newStudent.name || ''} onChange={e => setNewStudent({...newStudent, name: e.target.value})} />
-                 <Input label="Contact (Login ID)" value={newStudent.contact || ''} onChange={e => setNewStudent({...newStudent, contact: e.target.value})} />
-                 <Input label="Father's Name" value={newStudent.fatherName || ''} onChange={e => setNewStudent({...newStudent, fatherName: e.target.value})} />
-                 <Input label="Roll No" value={newStudent.rollNumber || ''} onChange={e => setNewStudent({...newStudent, rollNumber: e.target.value})} />
-              </div>
-              
-              <div className="mt-6">
-                 <Button onClick={handleAddStudent} fullWidth disabled={!newStudent.class}>Confirm Registration</Button>
-              </div>
-            </Card>
-
-            <div className="space-y-3">
-               <div className="flex justify-between items-center">
-                 <h3 className="font-bold text-gray-700">Registered Students</h3>
-                 <span className="text-xs bg-gray-200 px-2 py-1 rounded-full">{students.length} Total</span>
-               </div>
-               
-               {students.map(s => (
-                 <div key={s.id} className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 flex justify-between items-center">
-                   <div>
-                     <p className="font-bold text-gray-800">{s.name}</p>
-                     <p className="text-xs text-gray-500">{s.contact} | {s.class}</p>
-                   </div>
-                   <button onClick={() => handleDeleteStudent(s.contact)} className="text-red-500 p-2"><Trash2 size={18}/></button>
-                 </div>
-               ))}
+            {/* View Mode Toggles */}
+            <div className="flex bg-gray-200 rounded-lg p-1">
+              <button 
+                className={`flex-1 py-2 rounded-md text-sm font-bold flex items-center justify-center gap-2 ${studentViewMode === 'register' ? 'bg-white shadow text-emerald-800' : 'text-gray-500'}`}
+                onClick={() => setStudentViewMode('register')}
+              >
+                <UserPlus size={16} /> Registration
+              </button>
+              <button 
+                className={`flex-1 py-2 rounded-md text-sm font-bold flex items-center justify-center gap-2 ${studentViewMode === 'overview' ? 'bg-white shadow text-emerald-800' : 'text-gray-500'}`}
+                onClick={() => setStudentViewMode('overview')}
+              >
+                <LayoutDashboard size={16} /> Status Overview
+              </button>
             </div>
+
+            {studentViewMode === 'register' ? (
+              // REGISTER MODE
+              <>
+                <Card className="border-l-4 border-l-emerald-500">
+                  <h3 className="font-bold text-lg mb-4 text-emerald-900">Student Registration</h3>
+                  
+                  <div className="mb-6">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">1. Select Class (Required)</label>
+                    <div className="bg-gray-100 rounded-xl p-2 space-y-2">
+                      {AVAILABLE_CLASSES.map((cls) => {
+                        const isSelected = newStudent.class === cls;
+                        return (
+                          <div 
+                            key={cls}
+                            className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition-all ${isSelected ? 'bg-emerald-600 text-white shadow-md' : 'bg-white hover:bg-gray-50 text-gray-700'}`}
+                            onClick={() => selectClass(cls)}
+                          >
+                            <span className="font-semibold">{cls}</span>
+                            {isSelected && (
+                              <div className="flex items-center gap-2">
+                                <button onClick={(e) => { e.stopPropagation(); handleClassNav('up'); }} className="p-1 hover:bg-emerald-500 rounded"><ArrowUp size={16}/></button>
+                                <button onClick={(e) => { e.stopPropagation(); handleClassNav('down'); }} className="p-1 hover:bg-emerald-500 rounded"><ArrowDown size={16}/></button>
+                                <button onClick={(e) => { e.stopPropagation(); clearClassSelection(); }} className="p-1 hover:bg-red-500 rounded bg-red-600/20"><X size={16}/></button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {newStudent.class && (
+                    <div className="mb-6 animate-in fade-in slide-in-from-top-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">2. Enrolled Subjects</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {subjects.map(sub => {
+                          const isChecked = (newStudent.subjects || []).includes(sub.name);
+                          return (
+                            <div 
+                              key={sub.name}
+                              onClick={() => toggleSubject(sub.name)}
+                              className={`p-2 border rounded-lg text-sm flex items-center gap-2 cursor-pointer ${isChecked ? 'border-emerald-500 bg-emerald-50 text-emerald-900' : 'border-gray-200'}`}
+                            >
+                               {isChecked ? <CheckSquare size={16} className="text-emerald-600"/> : <Square size={16} className="text-gray-400"/>}
+                               {sub.name}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="space-y-4">
+                     <Input label="Full Name" value={newStudent.name || ''} onChange={e => setNewStudent({...newStudent, name: e.target.value})} />
+                     <Input label="Contact (Login ID)" value={newStudent.contact || ''} onChange={e => setNewStudent({...newStudent, contact: e.target.value})} />
+                     <Input label="Father's Name" value={newStudent.fatherName || ''} onChange={e => setNewStudent({...newStudent, fatherName: e.target.value})} />
+                     <Input label="Roll No" value={newStudent.rollNumber || ''} onChange={e => setNewStudent({...newStudent, rollNumber: e.target.value})} />
+                  </div>
+                  
+                  <div className="mt-6">
+                     <Button onClick={handleAddStudent} fullWidth disabled={!newStudent.class}>Confirm Registration</Button>
+                  </div>
+                </Card>
+
+                <div className="space-y-3">
+                   <div className="flex justify-between items-center">
+                     <h3 className="font-bold text-gray-700">Registered Students</h3>
+                     <span className="text-xs bg-gray-200 px-2 py-1 rounded-full">{students.length} Total</span>
+                   </div>
+                   
+                   {students.map(s => (
+                     <div key={s.id} className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 flex justify-between items-center">
+                       <div>
+                         <p className="font-bold text-gray-800">{s.name}</p>
+                         <p className="text-xs text-gray-500">{s.contact} | {s.class}</p>
+                       </div>
+                       <button onClick={() => handleDeleteStudent(s.contact)} className="text-red-500 p-2"><Trash2 size={18}/></button>
+                     </div>
+                   ))}
+                </div>
+              </>
+            ) : (
+              // OVERVIEW MODE
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                   <h3 className="font-bold text-gray-700">Student Status Overview</h3>
+                   <select 
+                     value={overviewClass}
+                     onChange={(e) => setOverviewClass(e.target.value)}
+                     className="border border-gray-300 rounded px-2 py-1 text-sm font-bold text-gray-600 outline-none"
+                   >
+                     <option value="All">All Classes</option>
+                     {AVAILABLE_CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
+                   </select>
+                </div>
+                
+                {overviewLoading ? (
+                  <div className="text-center py-10"><Loader2 className="animate-spin inline text-emerald-600"/> Loading statuses...</div>
+                ) : (
+                  <div className="space-y-2">
+                    {students
+                      .filter(s => overviewClass === 'All' || s.class === overviewClass)
+                      .map(student => {
+                        const today = new Date().toISOString().split('T')[0];
+                        const currentMonthName = MONTHS[new Date().getMonth()];
+                        
+                        // Status Logic
+                        const attendance = overviewData.attendance.find(a => a.studentId === student.contact);
+                        const isPresent = attendance?.history?.[today] === 'present';
+                        const isAbsent = attendance?.history?.[today] === 'absent';
+                        
+                        const fees = overviewData.fees.find(f => f.studentId === student.contact);
+                        const isFeePaid = fees?.payments?.[currentMonthName];
+                        
+                        // Get Latest Result
+                        const studentResults = overviewData.results.filter(r => r.studentId === student.contact);
+                        // Sort by exam name implies chronological order if formatted well, 
+                        // but simplest is just taking the last one in the array if we assume DB order, 
+                        // or filtering for 'Annual 2026' explicitly. Let's take the first one found.
+                        const latestResult = studentResults.length > 0 ? studentResults[0] : null;
+
+                        return (
+                          <div key={student.id} className="bg-white p-3 rounded-lg shadow-sm border border-gray-200">
+                             <div className="flex justify-between items-start mb-2">
+                               <div>
+                                 <p className="font-bold text-emerald-900">{student.name}</p>
+                                 <p className="text-xs text-gray-500">{student.class} | Roll: {student.rollNumber}</p>
+                               </div>
+                               <div className="text-right">
+                                  <span className="text-xs font-mono text-gray-400">{student.contact}</span>
+                               </div>
+                             </div>
+                             
+                             <div className="grid grid-cols-3 gap-2 mt-2 text-xs">
+                                {/* Attendance Badge */}
+                                <div className={`px-2 py-1 rounded text-center border font-bold ${isPresent ? 'bg-emerald-100 border-emerald-200 text-emerald-700' : isAbsent ? 'bg-red-100 border-red-200 text-red-700' : 'bg-gray-50 border-gray-200 text-gray-400'}`}>
+                                   {isPresent ? 'Present Today' : isAbsent ? 'Absent Today' : 'No Attd.'}
+                                </div>
+                                
+                                {/* Fee Badge */}
+                                <div className={`px-2 py-1 rounded text-center border font-bold ${isFeePaid ? 'bg-emerald-100 border-emerald-200 text-emerald-700' : 'bg-amber-50 border-amber-200 text-amber-700'}`}>
+                                   {isFeePaid ? 'Fee Paid' : 'Fee Due'}
+                                </div>
+
+                                {/* Result Badge */}
+                                <div className={`px-2 py-1 rounded text-center border font-bold ${latestResult ? (latestResult.isPass ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-red-50 border-red-200 text-red-700') : 'bg-gray-50 text-gray-400'}`}>
+                                   {latestResult ? `${latestResult.percentage}%` : 'No Result'}
+                                </div>
+                             </div>
+                          </div>
+                        );
+                    })}
+                    {students.filter(s => overviewClass === 'All' || s.class === overviewClass).length === 0 && (
+                      <div className="text-center py-10 text-gray-400">No students found.</div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -726,7 +854,7 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
                         className="w-full p-2 border rounded" 
                         value={indResExam} 
                         onChange={e => setIndResExam(e.target.value)} 
-                        placeholder="e.g. Annual 2024"
+                        placeholder="e.g. Annual 2026"
                       />
                     </div>
 
@@ -778,7 +906,7 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
                      className="w-full p-2 border rounded" 
                      value={resultConfig.exam} 
                      onChange={e => setResultConfig({...resultConfig, exam: e.target.value})} 
-                     placeholder="e.g. Annual 2024"
+                     placeholder="e.g. Annual 2026"
                    />
                  </div>
                  <div>

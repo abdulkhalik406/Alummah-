@@ -451,10 +451,11 @@ const App: React.FC = () => {
       </div>
 
       <div className="text-center text-xs text-gray-400 py-4 absolute bottom-0 w-full">
-        &copy; 2024 Maktabatul Ummah App
+        &copy; 2026 Maktabatul Ummah App
       </div>
     </div>
   );
 };
 
 export default App;
+    

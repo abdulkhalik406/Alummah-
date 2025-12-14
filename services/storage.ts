@@ -1,3 +1,4 @@
+
 import * as firebaseApp from "firebase/app";
 import { 
   getFirestore, collection, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, 
@@ -19,8 +20,8 @@ const BASE_PATH = `/artifacts/${APP_ID}/public/data`;
 
 // Cloudinary Credentials
 const CLOUDINARY_CLOUD_NAME = 'dnfppupi4';
-const CLOUDINARY_API_KEY = '189714524459898';
-const CLOUDINARY_API_SECRET = 'yFHcdZR5ivs89fnDbwWCJ98xPT0';
+const CLOUDINARY_API_KEY = '248764635877288';
+const CLOUDINARY_API_SECRET = 'CQCR-QBeSgtt0cVytzcyFoJLe24';
 
 // Paths helper
 const paths = {
@@ -284,54 +285,6 @@ export const api = {
         LS.set('maktab_results', list);
       }
     }
-    
-    // Recalculate Logic
-    const allSubjects = await api.getSubjects();
-    for(const update of updates) {
-       const docId = `${update.studentId}_${examName.replace(/\s+/g, '_')}`;
-       let result: StudentResult | undefined;
-       
-       if(db) {
-          const snap = await getDoc(doc(db, paths.results, docId));
-          result = snap.data() as StudentResult;
-       } else {
-          result = LS.results().find(r => r.id === docId);
-       }
-       
-       if(result) {
-         let totalObt = 0;
-         let maxTotal = 0;
-         let isPass = true;
-         
-         for(const sub of Object.keys(result.marks)) {
-            const m = result.marks[sub];
-            totalObt += m;
-            const cfg = allSubjects.find(s => s.name === sub);
-            maxTotal += cfg ? cfg.maxMarks : 100;
-            if(m < 35) isPass = false;
-         }
-         
-         const percentage = maxTotal > 0 ? (totalObt / maxTotal) * 100 : 0;
-         const { grade } = calculateGradeInfo(percentage);
-         
-         const updatedRes = {
-           ...result,
-           totalMarks: totalObt,
-           maxTotalMarks: maxTotal,
-           percentage: parseFloat(percentage.toFixed(2)),
-           overallGrade: grade,
-           isPass
-         };
-         
-         if(db) await setDoc(doc(db, paths.results, docId), updatedRes);
-         else {
-            const list = LS.results();
-            const idx = list.findIndex(r => r.id === docId);
-            list[idx] = updatedRes;
-            LS.set('maktab_results', list);
-         }
-       }
-    }
   },
 
   saveResult: async (result: Omit<StudentResult, 'id'>) => {
@@ -364,48 +317,6 @@ export const api = {
     
     scores.sort((a, b) => b - a);
     return scores.indexOf(myTotal) + 1;
-  },
-
-  // Upload (Cloudinary Integration)
-  uploadFile: async (file: File, folder: string): Promise<string> => {
-    try {
-      const timestamp = Math.round((new Date()).getTime() / 1000);
-      
-      // Generate Signature
-      // String to sign: folder=folder&timestamp=timestamp + API_SECRET
-      // Note: Parameters must be alphabetical
-      const paramsToSign = `folder=${folder}&timestamp=${timestamp}${CLOUDINARY_API_SECRET}`;
-      const signature = await sha1(paramsToSign);
-
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('api_key', CLOUDINARY_API_KEY);
-      formData.append('timestamp', String(timestamp));
-      formData.append('folder', folder);
-      formData.append('signature', signature);
-
-      const response = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/auto/upload`, {
-        method: 'POST',
-        body: formData
-      });
-
-      const data = await response.json();
-      if (data.secure_url) {
-        return data.secure_url;
-      } else {
-        console.error("Cloudinary Error", data);
-        throw new Error(data.error?.message || 'Upload failed');
-      }
-    } catch (e) {
-      console.error("Cloudinary upload failed", e);
-      alert("Online upload failed. Switching to offline mode (local storage only).");
-      // Offline fallback: Convert to Base64
-      return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result as string);
-        reader.readAsDataURL(file);
-      });
-    }
   },
 
   // Notifications
@@ -448,6 +359,42 @@ export const api = {
     }
   },
 
+  // File Upload (Cloudinary)
+  uploadFile: async (file: File, folder: string): Promise<string> => {
+    // 1. Get Signature params
+    const timestamp = Math.round((new Date()).getTime() / 1000);
+    const params = `folder=${folder}&timestamp=${timestamp}${CLOUDINARY_API_SECRET}`;
+    
+    // 2. Generate Signature
+    const signature = await sha1(params);
+    
+    // 3. Upload
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('api_key', CLOUDINARY_API_KEY);
+    formData.append('timestamp', timestamp.toString());
+    formData.append('folder', folder);
+    formData.append('signature', signature);
+    
+    try {
+      const response = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/auto/upload`, {
+        method: 'POST',
+        body: formData
+      });
+      const data = await response.json();
+      if (data.secure_url) return data.secure_url;
+      throw new Error(data.error?.message || 'Upload failed');
+    } catch (e) {
+      console.error("Cloudinary upload error:", e);
+      // Fallback to Base64 if cloud upload fails
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(file);
+      });
+    }
+  },
+
   // Attendance
   getAttendance: async (studentId: string): Promise<AttendanceRecord | null> => {
     if (db) {
@@ -460,13 +407,25 @@ export const api = {
     return null;
   },
 
+  // Bulk Fetch for Overview
+  getAllAttendance: async (): Promise<AttendanceRecord[]> => {
+    if (db) {
+      const snap = await getDocs(collection(db, paths.attendance));
+      return snap.docs.map(d => ({ ...d.data(), id: d.id } as AttendanceRecord));
+    } else {
+      return LS.attendance();
+    }
+  },
+
   getAttendanceForClass: async (studentIds: string[]): Promise<AttendanceRecord[]> => {
-     const records: AttendanceRecord[] = [];
-     for (const id of studentIds) {
-       const rec = await api.getAttendance(id);
-       if (rec) records.push(rec);
-     }
-     return records;
+    // Firestore "in" query limited to 10, so better to fetch individually or use bulk if small
+    // For simplicity, we can fetch all or loop
+    const results: AttendanceRecord[] = [];
+    for (const id of studentIds) {
+      const r = await api.getAttendance(id);
+      if (r) results.push(r);
+    }
+    return results;
   },
 
   updateAttendance: async (record: AttendanceRecord) => {
@@ -493,6 +452,7 @@ export const api = {
     for (const student of classStudents) {
       let record: AttendanceRecord | null = null;
       
+      // Get existing
       if (db) {
         const snap = await getDoc(doc(db, paths.attendance, student.contact));
         if (snap.exists()) record = snap.data() as AttendanceRecord;
@@ -501,20 +461,31 @@ export const api = {
       }
 
       const history = record?.history || {};
+      const alreadyMarked = history[date];
       const isPresent = tickedStudentIds.includes(student.contact);
       
-      history[date] = isPresent ? 'present' : 'absent';
+      // Logic: Only update counters if status changed or wasn't marked
+      let newTotal = record?.totalClasses || 0;
+      let newPresent = record?.presentDays || 0;
 
-      const dates = Object.keys(history);
-      const total = dates.length;
-      const present = Object.values(history).filter(status => status === 'present').length;
+      if (!alreadyMarked) {
+        // First time marking for this date
+        newTotal++;
+        if (isPresent) newPresent++;
+      } else {
+        // Changing existing mark
+        if (alreadyMarked === 'absent' && isPresent) newPresent++;
+        if (alreadyMarked === 'present' && !isPresent) newPresent--;
+      }
+
+      history[date] = isPresent ? 'present' : 'absent';
 
       const newRecord: AttendanceRecord = {
         studentId: student.contact,
-        totalClasses: total,
-        presentDays: present,
-        lastUpdated: date,
-        history: history
+        totalClasses: newTotal,
+        presentDays: newPresent,
+        history: history,
+        lastUpdated: date
       };
 
       if (db) {
@@ -529,63 +500,51 @@ export const api = {
     }
   },
 
-  // --- FEE MANAGEMENT ---
-  
+  // Fees
   getFeeStructure: async (): Promise<FeeStructure> => {
     if (db) {
       const snap = await getDoc(doc(db, paths.config, 'fees'));
-      if (snap.exists()) return snap.data().structure;
+      return snap.exists() ? snap.data() : {};
     } else {
-      const stored = LS.feeStructure();
-      if (stored) return stored;
+      return LS.feeStructure() || {};
     }
-    return {
-      'Class I': 500, 'Class II': 600, 'Class III': 700, 'Class IV': 800, 'Class V': 900
-    };
   },
 
-  saveFeeStructure: async (structure: FeeStructure) => {
+  saveFeeStructure: async (fees: FeeStructure) => {
     if (db) {
-      await setDoc(doc(db, paths.config, 'fees'), { structure });
+      await setDoc(doc(db, paths.config, 'fees'), fees);
     } else {
-      LS.set('maktab_fee_config', structure);
+      LS.set('maktab_fee_config', fees);
     }
   },
 
   getStudentFeeRecord: async (studentId: string, year: string): Promise<FeePaymentRecord> => {
-    const docId = `${studentId}_${year}`;
+    const id = `${studentId}_${year}`;
     if (db) {
-      const snap = await getDoc(doc(db, paths.fees, docId));
+      const snap = await getDoc(doc(db, paths.fees, id));
       if (snap.exists()) return snap.data() as FeePaymentRecord;
     } else {
       const rec = LS.feeRecords().find(r => r.studentId === studentId && r.year === year);
       if (rec) return rec;
     }
+    // Default
     return { studentId, year, payments: {} };
   },
 
-  getAllFeeRecords: async (): Promise<FeePaymentRecord[]> => {
+  getAllFeeRecords: async (year: string): Promise<FeePaymentRecord[]> => {
     if (db) {
-      const snapshot = await getDocs(collection(db, paths.fees));
-      return snapshot.docs.map(d => d.data() as FeePaymentRecord);
+      const q = query(collection(db, paths.fees), where('year', '==', year));
+      const snap = await getDocs(q);
+      return snap.docs.map(d => d.data() as FeePaymentRecord);
     } else {
-      return LS.feeRecords();
-    }
-  },
-
-  getAllAttendance: async (): Promise<AttendanceRecord[]> => {
-    if (db) {
-      const snapshot = await getDocs(collection(db, paths.attendance));
-      return snapshot.docs.map(d => d.data() as AttendanceRecord);
-    } else {
-      return LS.attendance();
+      return LS.feeRecords().filter(r => r.year === year);
     }
   },
 
   updateStudentFee: async (record: FeePaymentRecord) => {
-    const docId = `${record.studentId}_${record.year}`;
+    const id = `${record.studentId}_${record.year}`;
     if (db) {
-      await setDoc(doc(db, paths.fees, docId), record);
+      await setDoc(doc(db, paths.fees, id), record);
     } else {
       const list = LS.feeRecords();
       const idx = list.findIndex(r => r.studentId === record.studentId && r.year === record.year);
@@ -595,33 +554,23 @@ export const api = {
     }
   },
 
-  // --- FEEDBACK ---
-
+  // Feedback
   getFeedback: async (): Promise<Feedback[]> => {
     if (db) {
-      const q = query(collection(db, paths.feedback), orderBy('timestamp', 'desc'));
-      const snapshot = await getDocs(q);
-      return snapshot.docs.map(d => ({ ...d.data(), id: d.id } as Feedback));
+      const q = query(collection(db, paths.feedback), orderBy('date', 'desc'));
+      const snap = await getDocs(q);
+      return snap.docs.map(d => ({ ...d.data(), id: d.id } as Feedback));
     } else {
-      await LS.delay();
-      return LS.feedback().sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      return LS.feedback();
     }
   },
 
-  addFeedback: async (feedback: Omit<Feedback, 'id' | 'timestamp'>) => {
-    const newFeedback = {
-      ...feedback,
-      timestamp: Date.now()
-    };
-
+  addFeedback: async (feedback: Feedback) => {
     if (db) {
-      await addDoc(collection(db, paths.feedback), {
-        ...newFeedback,
-        timestamp: serverTimestamp()
-      });
+      await addDoc(collection(db, paths.feedback), { ...feedback, timestamp: serverTimestamp() });
     } else {
       const list = LS.feedback();
-      list.push({ ...newFeedback, id: Math.random().toString(36).substr(2, 9) });
+      list.unshift({ ...feedback, id: Date.now().toString() });
       LS.set('maktab_feedback', list);
     }
   },
