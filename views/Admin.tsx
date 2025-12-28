@@ -162,7 +162,7 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
   const handlePdfUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 2 * 1024 * 1024) { // 2MB limit (relaxed for Cloud Storage)
+      if (file.size > 2 * 1024 * 1024) { 
         alert("File too large. Please upload PDF smaller than 2MB.");
         e.target.value = '';
         return;
@@ -199,6 +199,7 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
       setPdfFile(null);
       setImagePreview(null);
       refreshData();
+      alert("Notification uploaded to Firebase successfully!");
     } catch (e) {
       alert("Failed to post notification. Please try again.");
     } finally {
@@ -244,7 +245,6 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
     const map: Record<string, number> = {};
     
     students.forEach(s => {
-      // Find result for this student & exam
       const res = currentResults.find(r => r.studentId === s.contact && r.examName === resultConfig.exam);
       if (res && res.marks[resultConfig.subject]) {
         map[s.contact] = res.marks[resultConfig.subject];
@@ -259,7 +259,6 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
     if (!resultConfig.class || !resultConfig.subject) return;
     const updates = Object.entries(marksEntry).map(([studentId, marks]) => ({ studentId, marks: Number(marks) }));
     
-    // Find max marks for selected subject
     const subjectCfg = subjects.find(s => s.name === resultConfig.subject);
     const max = subjectCfg ? subjectCfg.maxMarks : 100;
 
@@ -275,7 +274,6 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
   const [indResMarks, setIndResMarks] = useState<Record<string, number>>({});
   const [isIndResLoaded, setIsIndResLoaded] = useState(false);
 
-  // Load students dropdown when class changes
   const handleIndResClassChange = async (cls: string) => {
     setIndResClass(cls);
     setIndResStudents(await api.getStudentsByClass(cls));
@@ -286,19 +284,16 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
   const loadIndividualResult = async () => {
     if (!indResStudentId || !indResExam) return;
     
-    // Get student details to find Enrolled Subjects
     const student = indResStudents.find(s => s.contact === indResStudentId);
     if (!student) return;
 
     const enrolledSubjects = student.subjects && student.subjects.length > 0 
       ? student.subjects 
-      : subjects.map(s => s.name); // Fallback to all if none specified
+      : subjects.map(s => s.name); 
 
-    // Fetch existing results
     const allResults = await api.getResults(indResStudentId);
     const existingResult = allResults.find(r => r.examName === indResExam);
 
-    // Pre-fill
     const marks: Record<string, number> = {};
     enrolledSubjects.forEach(subName => {
       marks[subName] = existingResult?.marks[subName] || 0;
@@ -318,7 +313,6 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
     let maxTotal = 0;
     let isPass = true;
 
-    // Iterate over the marks we are editing
     Object.entries(indResMarks).forEach(([subName, mark]) => {
       const score = Number(mark);
       totalObtained += score;
@@ -326,7 +320,7 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
       if (subCfg) {
         maxTotal += subCfg.maxMarks;
       } else {
-        maxTotal += 100; // default fallback
+        maxTotal += 100;
       }
       
       if (score < 35) isPass = false;
@@ -356,18 +350,15 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
   const [attClass, setAttClass] = useState('');
   const [attDate, setAttDate] = useState(new Date().toISOString().split('T')[0]);
   const [attStudents, setAttStudents] = useState<Student[]>([]);
-  const [tickedStudents, setTickedStudents] = useState<string[]>([]); // List of IDs
+  const [tickedStudents, setTickedStudents] = useState<string[]>([]); 
 
-  // Load students and their attendance for the selected date
   const loadClassForAttendance = async (cls: string, date: string) => {
     setAttClass(cls);
     const students = await api.getStudentsByClass(cls);
     setAttStudents(students);
     
-    // Fetch attendance records for these students
     const records = await api.getAttendanceForClass(students.map(s => s.contact));
     
-    // Pre-fill ticks based on history[date] == 'present'
     const presentIds: string[] = [];
     students.forEach(s => {
       const record = records.find(r => r.studentId === s.contact);
@@ -378,7 +369,6 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
     setTickedStudents(presentIds);
   };
   
-  // Reload when date changes if class is already selected
   useEffect(() => {
     if (attClass && attDate) {
       loadClassForAttendance(attClass, attDate);
@@ -400,9 +390,8 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
   const [feeClass, setFeeClass] = useState('');
   const [feeStudents, setFeeStudents] = useState<Student[]>([]);
   const [selectedFeeStudent, setSelectedFeeStudent] = useState<string | null>(null);
-  const [studentFeeRecord, setStudentFeeRecord] = useState<Record<string, boolean>>({}); // Month -> Paid
+  const [studentFeeRecord, setStudentFeeRecord] = useState<Record<string, boolean>>({}); 
   
-  // Year Selection State: Range 2025 - 2050
   const feeYears = Array.from({ length: 2050 - 2025 + 1 }, (_, i) => String(2025 + i));
   const [feeYear, setFeeYear] = useState(() => {
      const curr = new Date().getFullYear();
@@ -486,7 +475,6 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
         {/* --- STUDENT REGISTRATION & OVERVIEW TAB --- */}
         {activeTab === 'students' && (
           <div className="space-y-6">
-            {/* View Mode Toggles */}
             <div className="flex bg-gray-200 rounded-lg p-1">
               <button 
                 className={`flex-1 py-2 rounded-md text-sm font-bold flex items-center justify-center gap-2 ${studentViewMode === 'register' ? 'bg-white shadow text-emerald-800' : 'text-gray-500'}`}
@@ -503,7 +491,6 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
             </div>
 
             {studentViewMode === 'register' ? (
-              // REGISTER MODE
               <>
                 <Card className="border-l-4 border-l-emerald-500">
                   <h3 className="font-bold text-lg mb-4 text-emerald-900">Student Registration</h3>
@@ -584,7 +571,6 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
                 </div>
               </>
             ) : (
-              // OVERVIEW MODE
               <div className="space-y-4">
                 <div className="flex justify-between items-center">
                    <h3 className="font-bold text-gray-700">Student Status Overview</h3>
@@ -608,7 +594,6 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
                         const today = new Date().toISOString().split('T')[0];
                         const currentMonthName = MONTHS[new Date().getMonth()];
                         
-                        // Status Logic
                         const attendance = overviewData.attendance.find(a => a.studentId === student.contact);
                         const isPresent = attendance?.history?.[today] === 'present';
                         const isAbsent = attendance?.history?.[today] === 'absent';
@@ -616,11 +601,7 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
                         const fees = overviewData.fees.find(f => f.studentId === student.contact);
                         const isFeePaid = fees?.payments?.[currentMonthName];
                         
-                        // Get Latest Result
                         const studentResults = overviewData.results.filter(r => r.studentId === student.contact);
-                        // Sort by exam name implies chronological order if formatted well, 
-                        // but simplest is just taking the last one in the array if we assume DB order, 
-                        // or filtering for 'Annual 2026' explicitly. Let's take the first one found.
                         const latestResult = studentResults.length > 0 ? studentResults[0] : null;
 
                         return (
@@ -636,17 +617,12 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
                              </div>
                              
                              <div className="grid grid-cols-3 gap-2 mt-2 text-xs">
-                                {/* Attendance Badge */}
                                 <div className={`px-2 py-1 rounded text-center border font-bold ${isPresent ? 'bg-emerald-100 border-emerald-200 text-emerald-700' : isAbsent ? 'bg-red-100 border-red-200 text-red-700' : 'bg-gray-50 border-gray-200 text-gray-400'}`}>
                                    {isPresent ? 'Present Today' : isAbsent ? 'Absent Today' : 'No Attd.'}
                                 </div>
-                                
-                                {/* Fee Badge */}
                                 <div className={`px-2 py-1 rounded text-center border font-bold ${isFeePaid ? 'bg-emerald-100 border-emerald-200 text-emerald-700' : 'bg-amber-50 border-amber-200 text-amber-700'}`}>
                                    {isFeePaid ? 'Fee Paid' : 'Fee Due'}
                                 </div>
-
-                                {/* Result Badge */}
                                 <div className={`px-2 py-1 rounded text-center border font-bold ${latestResult ? (latestResult.isPass ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-red-50 border-red-200 text-red-700') : 'bg-gray-50 text-gray-400'}`}>
                                    {latestResult ? `${latestResult.percentage}%` : 'No Result'}
                                 </div>
@@ -681,7 +657,6 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
                </select>
             </div>
 
-            {/* Fee Config Section */}
             <Card>
               <h3 className="font-bold mb-4 text-emerald-800 flex items-center gap-2"><IndianRupee size={20}/> Monthly Fee Structure</h3>
               <div className="grid grid-cols-2 gap-3 mb-4">
@@ -700,7 +675,6 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
               <Button onClick={saveFeeStructure} fullWidth variant="secondary">Update Fees</Button>
             </Card>
 
-            {/* Fee Payment Section */}
             <div className="space-y-4">
               <h3 className="font-bold text-gray-700">Student Fee Records ({feeYear})</h3>
               
@@ -732,7 +706,6 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
                            </Button>
                          </div>
 
-                         {/* Detailed Fee Card Grid */}
                          {selectedFeeStudent === s.contact && (
                            <div className="mt-4 pt-4 border-t animate-in fade-in">
                              <p className="text-sm font-bold text-gray-600 mb-2">Monthly Status (Tick if Paid)</p>
@@ -826,7 +799,6 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
         {/* --- RESULTS TAB --- */}
         {activeTab === 'results' && (
           <div className="space-y-8">
-            {/* INDIVIDUAL EDIT CARD */}
              <Card className="border-t-4 border-t-amber-500">
                 <h3 className="font-bold text-lg mb-4 text-amber-800 flex items-center gap-2"><Edit size={18}/> Individual Result Management</h3>
                 
@@ -889,7 +861,6 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
                 )}
              </Card>
 
-            {/* BULK ENTRY CARD */}
              <Card>
                <h3 className="font-bold mb-4 text-emerald-800 flex items-center gap-2"><Users size={18}/> Bulk Marks Entry (Single Subject)</h3>
                <div className="space-y-3">
@@ -1031,7 +1002,7 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
               </div>
 
               <Button onClick={handleAddNotif} fullWidth disabled={isUploading}>
-                {isUploading ? <><Loader2 className="animate-spin" size={20}/> Uploading...</> : 'Publish'}
+                {isUploading ? <><Loader2 className="animate-spin" size={20}/> Uploading...</> : 'Upload to Firebase & Publish'}
               </Button>
             </Card>
 

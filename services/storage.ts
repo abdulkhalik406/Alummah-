@@ -4,6 +4,7 @@ import {
   getFirestore, collection, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, 
   query, where, getDocs, orderBy, onSnapshot, serverTimestamp, Firestore 
 } from "firebase/firestore";
+import { getStorage, ref, uploadBytes, getDownloadURL, FirebaseStorage } from "firebase/storage";
 import { User, UserRole, Student, Notification, StudentResult, AttendanceRecord, SubjectConfig, ADMIN_CONTACTS, FeeStructure, FeePaymentRecord, Feedback } from '../types';
 
 // --- CONFIG & INIT ---
@@ -18,11 +19,15 @@ declare global {
 const APP_ID = window.__app_id || 'maktab-default';
 const BASE_PATH = `/artifacts/${APP_ID}/public/data`;
 
-// Cloudinary Credentials
-const CLOUDINARY_CLOUD_NAME = 'dnfppupi4';
-// Unsigned preset provided by user. 
-// Note: Unsigned uploads do not require API Key or Secret in the request.
-const CLOUDINARY_UPLOAD_PRESET = 'xmleojaa'; 
+// Alummah Project Config provided by user
+const ALUMMAH_CONFIG = {
+    apiKey: "AIzaSyC1tqf_ohnj8QQTgkbcrEKS_37Z-CoEVq8",
+    authDomain: "alummah-5e1c3.firebaseapp.com",
+    projectId: "alummah-5e1c3",
+    storageBucket: "alummah-5e1c3.firebasestorage.app",
+    messagingSenderId: "927232936050",
+    appId: "1:927232936050:web:Rx......" 
+};
 
 // Paths helper
 const paths = {
@@ -37,17 +42,19 @@ const paths = {
 
 // Initialize Firebase
 let db: Firestore | null = null;
+let storage: FirebaseStorage | null = null;
 
-if (window.__firebase_config) {
-  try {
-    const app = firebaseApp.initializeApp(window.__firebase_config);
-    db = getFirestore(app);
-    console.log("Firebase initialized successfully");
-  } catch (err) {
-    console.error("Firebase init failed, falling back to LocalStorage", err);
-  }
-} else {
-  console.warn("No Firebase config found. Running in Offline/Mock Mode.");
+// Use user provided config or fallback to injected environment config
+const firebaseConfig = window.__firebase_config || ALUMMAH_CONFIG;
+
+try {
+  // Initialize App
+  const app = firebaseApp.getApps().length === 0 ? firebaseApp.initializeApp(firebaseConfig) : firebaseApp.getApp();
+  db = getFirestore(app);
+  storage = getStorage(app);
+  console.log("Firebase & Storage initialized successfully with project:", firebaseConfig.projectId);
+} catch (err) {
+  console.error("Firebase init failed, falling back to LocalStorage", err);
 }
 
 // --- HELPERS ---
@@ -351,33 +358,37 @@ export const api = {
     }
   },
 
-  // File Upload (Cloudinary Unsigned Upload)
+  // File Upload (Using Firebase Storage)
   uploadFile: async (file: File, folder: string): Promise<string> => {
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
-    // Note: 'folder' is appended but unsigned presets may override this based on their own settings.
-    formData.append('folder', folder); 
-    
+    if (!storage) {
+        console.warn("Firebase Storage not available, falling back to Base64");
+        return new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.readAsDataURL(file);
+        });
+    }
+
     try {
-      const response = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/auto/upload`, {
-        method: 'POST',
-        body: formData
-      });
-      const data = await response.json();
-      if (data.secure_url) return data.secure_url;
-      console.error("Cloudinary Error:", data);
-      throw new Error(data.error?.message || 'Upload failed');
+        // Snippet logic integration
+        const fileName = `${Date.now()}_${file.name}`;
+        const storageRef = ref(storage, `uploads/${fileName}`);
+        
+        console.log("Starting upload to Alummah project...");
+        const snapshot = await uploadBytes(storageRef, file);
+        console.log('Uploaded successfully!');
+        
+        const url = await getDownloadURL(snapshot.ref);
+        console.log("File URL obtained:", url);
+        return url;
     } catch (e: any) {
-      console.error("Cloudinary upload exception:", e);
-      
-      // Fallback to Base64 if cloud upload fails (e.g. network/cors issues)
-      // This ensures the app doesn't break completely.
-      return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result as string);
-        reader.readAsDataURL(file);
-      });
+        console.error("Firebase Storage upload error:", e);
+        // Fallback to Base64 on error
+        return new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.readAsDataURL(file);
+        });
     }
   },
 
