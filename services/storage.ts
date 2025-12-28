@@ -44,11 +44,9 @@ const paths = {
 let db: Firestore | null = null;
 let storage: FirebaseStorage | null = null;
 
-// Use user provided config or fallback to injected environment config
 const firebaseConfig = window.__firebase_config || ALUMMAH_CONFIG;
 
 try {
-  // Initialize App
   const app = firebaseApp.getApps().length === 0 ? firebaseApp.initializeApp(firebaseConfig) : firebaseApp.getApp();
   db = getFirestore(app);
   storage = getStorage(app);
@@ -358,10 +356,10 @@ export const api = {
     }
   },
 
-  // File Upload (Using Firebase Storage)
+  // File Upload (Primary: Firebase Storage, Secondary: Local Base64)
   uploadFile: async (file: File, folder: string): Promise<string> => {
     if (!storage) {
-        console.warn("Firebase Storage not available, falling back to Base64");
+        console.warn("Storage not connected, using LocalStorage (Base64)");
         return new Promise((resolve) => {
             const reader = new FileReader();
             reader.onloadend = () => resolve(reader.result as string);
@@ -370,20 +368,12 @@ export const api = {
     }
 
     try {
-        // Snippet logic integration
         const fileName = `${Date.now()}_${file.name}`;
         const storageRef = ref(storage, `uploads/${fileName}`);
-        
-        console.log("Starting upload to Alummah project...");
         const snapshot = await uploadBytes(storageRef, file);
-        console.log('Uploaded successfully!');
-        
-        const url = await getDownloadURL(snapshot.ref);
-        console.log("File URL obtained:", url);
-        return url;
+        return await getDownloadURL(snapshot.ref);
     } catch (e: any) {
-        console.error("Firebase Storage upload error:", e);
-        // Fallback to Base64 on error
+        console.error("Online storage error, falling back to LocalStorage:", e);
         return new Promise((resolve) => {
             const reader = new FileReader();
             reader.onloadend = () => resolve(reader.result as string);
@@ -446,8 +436,6 @@ export const api = {
   bulkUpdateAttendance: async (classStudents: Student[], tickedStudentIds: string[], date: string) => {
     for (const student of classStudents) {
       let record: AttendanceRecord | null = null;
-      
-      // Get existing
       if (db) {
         const snap = await getDoc(doc(db, paths.attendance, student.contact));
         if (snap.exists()) record = snap.data() as AttendanceRecord;
@@ -459,16 +447,13 @@ export const api = {
       const alreadyMarked = history[date];
       const isPresent = tickedStudentIds.includes(student.contact);
       
-      // Logic: Only update counters if status changed or wasn't marked
       let newTotal = record?.totalClasses || 0;
       let newPresent = record?.presentDays || 0;
 
       if (!alreadyMarked) {
-        // First time marking for this date
         newTotal++;
         if (isPresent) newPresent++;
       } else {
-        // Changing existing mark
         if (alreadyMarked === 'absent' && isPresent) newPresent++;
         if (alreadyMarked === 'present' && !isPresent) newPresent--;
       }
@@ -522,7 +507,6 @@ export const api = {
       const rec = LS.feeRecords().find(r => r.studentId === studentId && r.year === year);
       if (rec) return rec;
     }
-    // Default
     return { studentId, year, payments: {} };
   },
 
